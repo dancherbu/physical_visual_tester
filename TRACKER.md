@@ -90,6 +90,23 @@ Goal: Map camera pixels to screen coordinates accurately.
 - [ ] **OCR Implementation:** Detect text + bounding boxes + confidence; expose a “tap box to select target” debug mode.
 - [ ] **Acceptance:** For a static screen, clicking the center of a detected word lands within ±10–20 px (after calibration).
 
+#### Alternative Vision Strategy: Digital Direct (Proposed Jan 2026)
+User request: Instead of camera OCR (subject to glare, perspective, blur), standardise on "Digital Input" via Screen Share or HDMI Capture.
+**Option A: HDMI Capture Card (USB OTG)**
+- **Hardware:** Laptop HDMI Out -> USB Capture Card -> Android USB-C.
+- **Software:** App treats input as a standard USB Camera (`Android UVC`).
+- **Pros:** Perfect pixel fidelity, 0 latency, 100% "Physical" (no software on target), simplifies "Homography" to simple scaling.
+- **Cons:** Requires small hardware dongle (~$15).
+
+**Option B: Screen Stream (Software)**
+- **Setup:** Target runs a streamer (VNC/WebRTC/WhatsApp). Android views stream.
+- **Process:** PVT App analyzes incoming frames from network or uses `MediaProjection` to capture the viewer app.
+- **Pros:** Wireless.
+- **Cons:** Requires software on target (breaks "Black Box" testing), potential latency/compression artifacts.
+
+**Decision:** Investigation pending. The "HDMI Capture" route aligns best with the "Physical Agent" philosophy while solving the "Camera Quality" headache.
+
+
 ### Phase 3: Test Runner Engine ("The Brain")
 Goal: Parse markdown scripts and execute the "Find -> Click" loop.
 - [ ] **Script Format v0.1 (First):** Define the canonical Markdown format, defaults, and edge cases (see spec below).

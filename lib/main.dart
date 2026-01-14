@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'spikes/spike_home_page.dart';
+import 'shell/main_shell.dart';
 
 void main() {
   runApp(const MyApp());
@@ -17,7 +17,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const SpikeHomePage(),
+      home: const MainShell(),
     );
   }
 }
