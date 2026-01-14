@@ -1,0 +1,24 @@
+name: pvt-ai
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "${OLLAMA_HOST_PORT:-11434}:11434"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles: ["rag"]
+    ports:
+      - "${QDRANT_HOST_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_HOST_PORT:-6334}:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  ollama:
+  qdrant_storage:
