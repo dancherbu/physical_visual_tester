@@ -1,16 +1,40 @@
-# physical_visual_tester
+# Physical Visual Tester (PVT)
 
-A new Flutter project.
+PVT is an offline, hardware-based testing tool where an Android device acts as a physical agent:
+- Reads the target screen via camera (OCR/Vision)
+- Controls the target device via Bluetooth HID (mouse/keyboard emulation)
+
+Project status and roadmap live in [TRACKER.md](TRACKER.md).
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+### Prereqs
+- Flutter SDK installed (`flutter doctor` should be clean)
+- Android Studio + Android SDK (for Android builds)
+- Docker Desktop (for running the local “brain” services)
 
-A few resources to get you started if this is your first Flutter project:
+### Run the Flutter app
+- `flutter pub get`
+- `flutter run`
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### Local “Brain” (Ollama)
+This repo includes an optional Docker Compose file to run local AI services.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- Start Ollama only:
+	- `docker compose -f docker-compose.ai.yml up -d`
+- Start Ollama + Qdrant (optional / later):
+	- `docker compose -f docker-compose.ai.yml --profile rag up -d`
+
+Defaults:
+- Ollama: `http://localhost:11434`
+- Qdrant: `http://localhost:6333` (only if enabled)
+
+Pull a small CPU-friendly model (recommended baseline):
+- `docker exec ollama ollama pull llama3.2:1b`
+
+Quick benchmark:
+- `pwsh -NoProfile -File tools/ollama_benchmark.ps1 -Model llama3.2:1b -NumPredict 128 -Runs 3`
+
+### Notes
+- If you already have an `ollama` container from another project, you can reuse it as long as it exposes `11434`.
+- If ports conflict, set `OLLAMA_HOST_PORT` / `QDRANT_HOST_PORT` before running compose.
