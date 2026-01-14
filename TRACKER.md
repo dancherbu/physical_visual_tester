@@ -20,16 +20,16 @@ Ship in **vertical slices** that de-risk hardware constraints early:
 
 ### Milestone 0: Feasibility Spikes (1–2 days)
 Goal: Kill the biggest unknowns before building architecture.
-- [ ] **HID Spike:** Minimal Android app code to register `BluetoothHidDevice`, advertise, pair, and send a single key (e.g., type `abc`) to a PC.
-- [ ] **Vision Spike:** Minimal Flutter screen that opens camera preview and runs ML Kit OCR on a single frame (manual capture button).
+- [~] **HID Spike:** Minimal Android app code to register `BluetoothHidDevice`, advertise, pair, and send a single key (e.g., type `abc`) to a PC.
+- [x] **Vision Spike:** Minimal Flutter screen that opens camera preview and runs ML Kit OCR on a single frame (manual capture button).
 - [ ] **Device/OS Matrix:** Confirm which Android devices/OS versions support peripheral mode + required Bluetooth features (document “known good”).
 - [ ] **Acceptance:** You can (a) type text into a PC text field and (b) detect a known word from camera with a bounding box.
 
 ### Milestone 0.5: Context & Decision Engine Spike (Local, Offline)
 Goal: Prove we can recognize dialogs/errors and choose safe next actions based on context.
-- [ ] **Define `UIState` JSON:** OCR blocks (text, bbox, confidence), screen/camera metadata, and derived flags (e.g., `has_modal_candidate`).
-- [ ] **Dialog Heuristics (Baseline):** Detect modal-ish regions and common buttons (OK/Cancel/Close/Retry) from OCR + geometry.
-- [ ] **Local LLM (Ollama):** Given goal + current `UIState` + recent actions, output a *restricted* next action as JSON.
+- [x] **Define `UIState` JSON:** OCR blocks (text, bbox, confidence), screen/camera metadata, and derived flags (e.g., `has_modal_candidate`).
+- [x] **Dialog Heuristics (Baseline):** Detect modal-ish regions and common buttons (OK/Cancel/Close/Retry) from OCR + geometry.
+- [x] **Local LLM (Ollama):** Given goal + current `UIState` + recent actions, output a *restricted* next action as JSON.
 - [ ] **LLM Guardrails (Vital):** Keep it fast/reliable on CPU-only hardware.
     - [ ] Call LLM **only on events** (step start, dialog detected, repeated failure), never per-frame.
     - [ ] Keep prompts short: current step + current OCR blocks + last 3–5 actions + a few derived flags.
@@ -38,6 +38,28 @@ Goal: Prove we can recognize dialogs/errors and choose safe next actions based o
     - [ ] Always log the decision + minimal rationale (“why”) for debugging.
 - [ ] **Safety Rails:** Allow-list actions, max retries, “no destructive clicks” mode, and require evidence capture on failures.
 - [ ] **Acceptance:** When an error dialog appears (“Error”, “Failed”, “Retry”), the system chooses an appropriate response (e.g., click “OK”/“Retry” or abort) and logs the rationale.
+
+#### Next Session Checklist (Jan 2026)
+- [x] Wire the Vision spike output (`UIState`) into the Decision spike (so the LLM reasons over real OCR, not the sample).
+- [x] **Finish HID Spike:** implement Android `BluetoothHidDevice` registration + advertise/pair + send a test key sequence to Windows.
+- [x] **Add a small “HID Spike” UI page:** connect/disconnect + send `abc` + basic status.
+- [x] **Connection Robustness:** Successfully diagnosed and fixed connection state/recovery issues (verified on Pixel 9 Pro + Windows 11).
+- Document a “known good” Android device/OS + Windows pairing flow.
+
+#### HID Spike Notes (Current)
+- Flutter UI exists under the “HID Spike” page.
+- Android implementation registers a basic BLE HID keyboard and advertises the HID service UUID.
+- [x] **Done:** Confirmed Windows pairs, and `sendKeyText` works reliably with auto-recovery logic.
+- [x] **Done:** Implement Mouse support (Move, Click, Long Press).
+
+#### HID Spike Completion Notes (Jan 14 2026)
+- **Status:** **COMPLETE**.
+- **Capabilities:**
+  - Keyboard: Send text, Return/Enter.
+  - Mouse: Move (relative), Click (Left/Right), Long Press (Drag/Context).
+  - Robustness: Auto-recovers stale connections.
+- **Usage:** Pair once. If app is restarted/killed, just open app and start typing/moving. No re-pairing needed unless Report Descriptor changes.
+- **Next Phase:** Phase 2 (Vision/Calibration).
 
 ### Milestone (Later): Memory / RAG (Optional)
 Goal: Improve consistency and reduce prompt size by retrieving relevant prior cases.
@@ -48,15 +70,16 @@ Goal: Improve consistency and reduce prompt size by retrieving relevant prior ca
 
 ### Phase 1: Bluetooth HID ("The Hands") - Core Priority
 Goal: Phone acts as a **reliable** BT keyboard/mouse.
-- [ ] **Define HID Contract (Flutter):** `connect()`, `disconnect()`, `sendKey(text)`, `sendMouseMove(dx, dy)`, `sendClick(button)`.
-- [ ] **Scaffold Native Channel:** MethodChannel + strongly typed Dart wrapper + error mapping.
-- [ ] **Implement Android HID Core:** Kotlin `BluetoothHidDevice` registration, callbacks, and connection state.
-- [ ] **Advertising + Pairing UX:** BLE advertising, discoverability, and a simple status UI (paired? connected?).
-- [ ] **Input Commands (Incremental):**
-    - [ ] Keyboard first (lowest friction)
-    - [ ] Mouse move + click next
-- [ ] **Robustness:** Reconnect strategy, timeouts, clear logs, and “Reset HID” action.
-- [ ] **Acceptance:** On Windows/macOS, you can type text and move/click the cursor repeatedly (10+ minutes) without re-pairing.
+- [x] **Define HID Contract (Flutter):** `connect()`, `disconnect()`, `sendKey(text)`, `sendMouseMove(dx, dy)`, `sendClick(button)`.
+- [x] **Scaffold Native Channel:** MethodChannel + strongly typed Dart wrapper + error mapping.
+- [x] **Implement Android HID Core:** Kotlin `BluetoothHidDevice` registration, callbacks, and connection state.
+- [x] **Advertising + Pairing UX:** BLE advertising, discoverability, and a simple status UI (paired? connected?).
+- [x] **Input Commands (Incremental):**
+    - [x] Keyboard first (lowest friction)
+    - [x] Mouse move + click next
+    - [x] Mouse Long Press
+- [x] **Robustness:** Reconnect strategy, timeouts, clear logs, and “Reset HID” action. (Fixed "Paired but not inputting" bug).
+- [x] **Acceptance:** On Windows/macOS, you can type text and move/click the cursor repeatedly (10+ minutes) without re-pairing. **(Verified Jan 14 2026: Pixel 9 Pro + Windows 11)**.
 
 ### Phase 2: Calibration & Vision ("The Eyes")
 Goal: Map camera pixels to screen coordinates accurately.
