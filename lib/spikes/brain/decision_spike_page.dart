@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../../vision/ocr_models.dart';
 import '../spike_store.dart';
-import '../vision/ocr_models.dart';
 import 'guarded_decider.dart';
 import 'ollama_client.dart';
 import 'pvt_actions.dart';

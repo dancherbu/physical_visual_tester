@@ -15,6 +15,7 @@ class OllamaClient {
 
   Future<String> generate({
     required String prompt,
+    List<String>? images, // Base64 encoded images
     int numPredict = 128,
     double temperature = 0.2,
   }) async {
@@ -24,6 +25,7 @@ class OllamaClient {
       'model': model,
       'prompt': prompt,
       'stream': false,
+      if (images != null) 'images': images,
       'options': {
         'num_predict': numPredict,
         'temperature': temperature,
@@ -55,6 +57,40 @@ class OllamaClient {
     }
 
     return responseText;
+  }
+
+  Future<List<double>> embed({
+    required String prompt,
+  }) async {
+    final url = baseUrl.resolve('/api/embeddings');
+
+    final body = jsonEncode({
+      'model': model,
+      'prompt': prompt,
+    });
+
+    final resp = await _http.post(
+      url,
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: body,
+    );
+
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw StateError(
+        'Ollama Embeddings HTTP ${resp.statusCode}: ${resp.body}',
+      );
+    }
+
+    final decoded = jsonDecode(resp.body);
+    final embedding = decoded['embedding'];
+    
+    if (embedding is! List) {
+       throw const FormatException('Ollama response missing "embedding" list.');
+    }
+    
+    return embedding.cast<double>();
   }
 
   void close() {

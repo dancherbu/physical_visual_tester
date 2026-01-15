@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../vision/ocr_models.dart';
+import '../../vision/ocr_models.dart';
 import 'ollama_client.dart';
 import 'pvt_actions.dart';
 

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../hid/method_channel_hid_adapter.dart';
 import 'dashboard_sheet.dart';

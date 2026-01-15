@@ -1,4 +1,4 @@
-import 'vision/ocr_models.dart';
+import '../vision/ocr_models.dart';
 
 /// Simple in-memory storage to pass spike data between pages.
 ///

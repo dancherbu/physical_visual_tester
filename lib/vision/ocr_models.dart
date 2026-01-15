@@ -24,6 +24,11 @@ class OcrBlock {
 
   @override
   String toString() => jsonEncode(toJson());
+
+  String toLLMDescription() {
+    // simplified for LLM token efficiency
+    return '"$text" at ${boundingBox.center}'; 
+  }
 }
 
 @immutable
@@ -43,6 +48,8 @@ class BoundingBox {
   double get width => (right - left).abs();
   double get height => (bottom - top).abs();
   double get area => width * height;
+  
+  String get center => '[${(left + width / 2).toStringAsFixed(0)}, ${(top + height / 2).toStringAsFixed(0)}]';
 
   Map<String, Object?> toJson() => {
         'left': left,
@@ -60,6 +67,7 @@ class UIState {
     required this.imageHeight,
     required this.derived,
     required this.createdAt,
+    this.embedding,
   });
 
   final List<OcrBlock> ocrBlocks;
@@ -67,6 +75,9 @@ class UIState {
   final int imageHeight;
   final DerivedFlags derived;
   final DateTime createdAt;
+  
+  /// Vector embedding of this state (CRITICAL for Qdrant/Memory)
+  final List<double>? embedding;
 
   Map<String, Object?> toJson() => {
         'created_at': createdAt.toIso8601String(),
@@ -76,9 +87,24 @@ class UIState {
         },
         'ocr_blocks': ocrBlocks.map((b) => b.toJson()).toList(growable: false),
         'derived': derived.toJson(),
+        if (embedding != null) 'embedding': embedding,
       };
 
   String toPrettyJson() => const JsonEncoder.withIndent('  ').convert(toJson());
+
+  /// Generates a dense textual description for Ollama.
+  String toLLMDescription() {
+    final buffer = StringBuffer();
+    buffer.writeln('Screen Resolution: ${imageWidth}x${imageHeight}');
+    buffer.writeln('Visible Text Elements:');
+    for (final block in ocrBlocks) {
+      buffer.writeln('- ${block.toLLMDescription()}');
+    }
+    if (derived.hasModalCandidate) {
+      buffer.writeln('Context: A modal/dialog appears to be open.');
+    }
+    return buffer.toString();
+  }
 }
 
 @immutable

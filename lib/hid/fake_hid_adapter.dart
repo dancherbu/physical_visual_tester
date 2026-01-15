@@ -36,4 +36,13 @@ class FakeHidAdapter implements HidAdapter {
   Future<void> sendMouseMove({required int dx, required int dy}) async {
     log.add({'op': 'move', 'dx': dx, 'dy': dy});
   }
+
+  @override
+  Future<void> sendLongPress(HidMouseButton button, Duration duration) async {
+    log.add({
+      'op': 'long_press',
+      'button': button.name,
+      'duration': duration.inMilliseconds,
+    });
+  }
 }

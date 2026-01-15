@@ -1,0 +1,27 @@
+Analyzing physical_visual_tester...                             
+
+warning - The value of the field '_lastUiState' isn't used - lib\shell\eye_actions_log_view.dart:37:12 - unused_field
+warning - The value of the local variable 'scale' isn't used - lib\shell\eye_actions_log_view.dart:254:15 - unused_local_variable
+warning - The value of the field '_connecting' isn't used - lib\shell\main_shell.dart:18:8 - unused_field
+warning - The value of the field '_connectError' isn't used - lib\shell\main_shell.dart:19:11 - unused_field
+warning - Unused import: '../../vision/ocr_models.dart' - lib\spikes\brain\qdrant_service.dart:3:8 - unused_import
+warning - The value of the field '_hid' isn't used - lib\spikes\vision\vision_spike_page.dart:39:20 - unused_field
+   info - The private field _ollamaUrl could be 'final' - lib\spikes\vision\vision_spike_page.dart:43:10 - prefer_final_fields
+warning - The value of the field '_ollamaUrl' isn't used - lib\spikes\vision\vision_spike_page.dart:43:10 - unused_field
+   info - The private field _qdrantUrl could be 'final' - lib\spikes\vision\vision_spike_page.dart:44:10 - prefer_final_fields
+warning - The value of the field '_qdrantUrl' isn't used - lib\spikes\vision\vision_spike_page.dart:44:10 - unused_field
+   info - The private field _ollamaModel could be 'final' - lib\spikes\vision\vision_spike_page.dart:45:10 - prefer_final_fields
+warning - The value of the field '_ollamaModel' isn't used - lib\spikes\vision\vision_spike_page.dart:45:10 - unused_field
+   info - The private field _starting could be 'final' - lib\spikes\vision\vision_spike_page.dart:47:8 - prefer_final_fields
+   info - The private field _streaming could be 'final' - lib\spikes\vision\vision_spike_page.dart:48:8 - prefer_final_fields
+warning - The value of the field '_latestImage' isn't used - lib\spikes\vision\vision_spike_page.dart:60:16 - unused_field
+warning - The value of the local variable 'centerImage' isn't used - lib\spikes\vision\vision_spike_page.dart:341:11 - unused_local_variable
+  error - Undefined name '_setupAi' - lib\spikes\vision\vision_spike_page.dart:384:24 - undefined_identifier
+  error - The method '_saveCalibration' isn't defined for the type '_VisionSpikePageState' - lib\spikes\vision\vision_spike_page.dart:398:18 - undefined_method
+  error - Undefined name '_initCamera' - lib\spikes\vision\vision_spike_page.dart:407:43 - undefined_identifier
+  error - Undefined name '_onCalibrationChanged' - lib\spikes\vision\vision_spike_page.dart:501:46 - undefined_identifier
+warning - The value of the field '_lastSize' isn't used - lib\vision\calibration_overlay.dart:24:13 - unused_field
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\vision\calibration_overlay.dart:80:42 - deprecated_member_use
+   info - Unnecessary braces in a string interpolation - lib\vision\ocr_models.dart:98:54 - unnecessary_brace_in_string_interps
+warning - Duplicate import - lib\vision\vision_overlay_painter.dart:6:8 - duplicate_import
+

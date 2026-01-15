@@ -20,7 +20,7 @@ InputImage? inputImageFromCameraImage(
   final format = InputImageFormatValue.fromRawValue(image.format.raw);
   if (format == null) return null;
 
-  final rotation = _rotationForCamera(camera.sensorOrientation);
+  final rotation = rotationForCamera(camera.sensorOrientation);
 
   final bytes = _concatenatePlaneBytes(image.planes);
 
@@ -35,7 +35,7 @@ InputImage? inputImageFromCameraImage(
   );
 }
 
-InputImageRotation _rotationForCamera(int sensorOrientation) {
+InputImageRotation rotationForCamera(int sensorOrientation) {
   switch (sensorOrientation) {
     case 0:
       return InputImageRotation.rotation0deg;

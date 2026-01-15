@@ -6,18 +6,23 @@
 - **Primary Goal:** Create an offline, hardware-based testing tool where an Android device acts as a physical agent to test external systems (Laptops, PCs, etc.).
 
 ## Core Capabilities
-1.  **"The Hands" (Inputs):** The Android device behaves as a Bluetooth HID peripheral (Keyboard/Mouse) to control the target device physically.
-2.  **"The Eyes" (Vision):** The Android device captures the target's visual state.
-    - *Original Plan:* Use the phone's camera + Computer Vision (OCR/Homography) to look at the physical monitor.
-    - *New Proposal (Under Investigation):* Use digital screen sharing (e.g., via specialized app or HDMI capture) to view the target screen directly, bypassing the need for a physical camera lens and complex calibration.
+- **The Hands**: Bluetooth HID (Keyboard/Mouse) for interacting with the target PC. ✅ **Functional**
+- **The Eyes**: 
+  - **Camera**: High-Res Capture + OCR (ML Kit). ✅ **Functional**
+  - **Brains**: Local LLM (Ollama) + Vector Memory (Qdrant). ✅ **Connected**
+- **The Brain ("Teacher" Mode)**: 
+  - **Workflow**: Watch User -> Capture State -> Ask Vision AI "What is this?" -> Save Memory.
+  - **Status**: 🚧 **Ready for Testing** (Waiting for `llava` model).
 
-## Key Files & Documentation
-- **`TRACKER.md`:** The central source of truth for project status, roadmap, and active tasks. **Always read this first.**
-- **`lib/main.dart`:** Entry point for the Flutter application.
+## Core Documentation
+- **[TRACKER.md](./TRACKER.md)**: The Master Plan. **READ THIS FIRST**.
+- **[Vision Spike](./lib/spikes/vision/vision_spike_page.dart)**: Main UI for Camera/OCR/Teacher.
+- **[Logic](./lib/spikes/brain/)**: `TeacherService`, `OllamaClient`, `QdrantService`.
 
-## Current State (as of Jan 2026)
+## Current Focus
+Validating the "Teacher" loop: Can we point at a screen, click a button, and have the AI correctly identify/remember the action? State (as of Jan 2026)
 - **HID Layer:** Complete (Keyboard & Mouse implemented).
-- **Vision Layer:** In planning/prototyping phase.
+- **Vision Layer:** 🚧 BROKEN / Debugging. Transitioning to "Teacher" model (RAG+Ollama).
 
 ## Workflow Rules
 - **Safety:** Verify commands before running.
