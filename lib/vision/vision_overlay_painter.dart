@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -15,9 +13,11 @@ class VisionOverlayPainter extends CustomPainter {
     required this.previewSize,
     required this.rotation,
     required this.cameraLensDirection,
+    this.learnedTexts = const {},
   });
 
   final List<OcrBlock> blocks;
+  final Set<String> learnedTexts;
   final Size imageSize;
   final Size previewSize;
   final InputImageRotation rotation;
@@ -27,12 +27,18 @@ class VisionOverlayPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (imageSize.width <= 0 || imageSize.height <= 0) return;
 
-    final paint = Paint()
+    final paintUnlearned = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0
-      ..color = Colors.greenAccent;
+      ..color = Colors.redAccent;
+
+    final paintLearned = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..color = Colors.green;
 
     for (final b in blocks) {
+      final isLearned = learnedTexts.contains(b.text);
       final rect = b.boundingBox;
       
       final left = translateX(
@@ -44,10 +50,31 @@ class VisionOverlayPainter extends CustomPainter {
       final bottom = translateY(
           rect.bottom, rotation, size, imageSize, cameraLensDirection);
 
+      final dstRect = Rect.fromLTRB(left, top, right, bottom);
+
       canvas.drawRect(
-        Rect.fromLTRB(left, top, right, bottom),
-        paint,
+        dstRect,
+        isLearned ? paintLearned : paintUnlearned,
       );
+      
+      if (isLearned) {
+         // Maybe draw a checkmark?
+         final icon = Icons.check_circle;
+         final textPainter = TextPainter(
+             text: TextSpan(
+              text: String.fromCharCode(icon.codePoint),
+              style: TextStyle(
+                fontSize: 14,
+                fontFamily: icon.fontFamily,
+                color: Colors.green,
+                fontWeight: FontWeight.bold,
+              ),
+             ),
+             textDirection: TextDirection.ltr,
+         );
+         textPainter.layout();
+         textPainter.paint(canvas, dstRect.topRight - const Offset(6, 6)); 
+      }
     }
   }
 
@@ -57,7 +84,8 @@ class VisionOverlayPainter extends CustomPainter {
         oldDelegate.imageSize != imageSize ||
         oldDelegate.previewSize != previewSize ||
         oldDelegate.rotation != rotation ||
-        oldDelegate.cameraLensDirection != cameraLensDirection;
+        oldDelegate.cameraLensDirection != cameraLensDirection ||
+        oldDelegate.learnedTexts != learnedTexts;
   }
 }
 

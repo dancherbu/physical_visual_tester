@@ -611,6 +611,9 @@ class MainActivity : FlutterActivity() {
         allowPolicyForBondedDevices()
 
 		startAdvertising()
+        
+        // Auto-connect to bonded host (e.g. Laptop)
+        connectToBondedDevices()
 	}
 
     private fun allowPolicyForBondedDevices() {
@@ -624,6 +627,33 @@ class MainActivity : FlutterActivity() {
             logEvent("Allowed policy for ${bonded.size} bonded devices")
         } catch(e: Exception) {
             logError("Failed to allow bulk policy: ${e.message}")
+        }
+    }
+
+    private fun connectToBondedDevices() {
+        val hid = hidDevice ?: return
+        val adapter = bluetoothAdapter ?: return
+        val bonded = adapter.bondedDevices
+        if (bonded.isNullOrEmpty()) {
+            logEvent("No bonded devices to connect to.")
+            return
+        }
+
+        // iterate and try to connect
+        for (device in bonded) {
+            // We can't easily distinguish 'Laptop' from 'Headphones' just by bond without digging into BluetoothClass,
+            // but for a HID peripheral, trying to connect to a bonded device is generally safe.
+            // The first one that accepts our L2CAP usage will succeed.
+            logEvent("Attempting auto-connect to ${device.name} (${device.address})")
+            
+            // Ensure policy is allowed first
+            tryAllowConnectionPolicy(hid, device)
+            
+            try {
+                hid.connect(device)
+            } catch (e: Exception) {
+                logError("Failed to connect to ${device.address}: ${e.message}")
+            }
         }
     }
 
@@ -847,17 +877,37 @@ class MainActivity : FlutterActivity() {
 
          if (host == null) {
              // Try recovery
-             val validHost = bluetoothAdapter?.bondedDevices?.firstOrNull { d ->
-                try {
-                    hid.getConnectionState(d) == BluetoothProfile.STATE_CONNECTED
-                } catch (e: Exception) { false }
-            }
-            if (validHost != null) {
-                connectedHost = validHost
-                logEvent("Recovered connection (Mouse)")
-            } else {
-                throw IllegalStateException("Not connected to host")
-            }
+             val bonded = bluetoothAdapter?.bondedDevices
+             if (!bonded.isNullOrEmpty()) {
+                 val hid = hidDevice!!
+                 // Try to find one that IS connected first
+                 var validHost = bonded.firstOrNull { d ->
+                    try {
+                        hid.getConnectionState(d) == BluetoothProfile.STATE_CONNECTED
+                    } catch (e: Exception) { false }
+                }
+                
+                // If none connected, try to CONNECT to the first one (Active Reconnection)
+                if (validHost == null) {
+                    val candidate = bonded.first() // Simply pick the first one for now
+                    logEvent("No active host. Attempting to force connect to ${candidate.name}")
+                    tryAllowConnectionPolicy(hid, candidate)
+                    hid.connect(candidate)
+                    // We can't wait for the result here synchronously as it's async. 
+                    // We just initiate and hope the user retries or it connects fast enough.
+                    // But for this call, we technically fail until the callback fires.
+                    throw IllegalStateException("Reconnecting to ${candidate.name}... Please try again in a moment.")
+                }
+
+                if (validHost != null) {
+                    connectedHost = validHost
+                    logEvent("Recovered connection (Mouse)")
+                } else {
+                    throw IllegalStateException("Not connected to host")
+                }
+             } else {
+                 throw IllegalStateException("No bonded devices found")
+             }
          }
          return hid
     }

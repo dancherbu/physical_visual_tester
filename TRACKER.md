@@ -52,28 +52,45 @@ Goal: "Teach" the agent how to use applications by demonstration + Memory (RAG).
     - [x] **Action 2:** "Scan Scene" finds all buttons and saves them to Qdrant (Auto-Discovery).
     - [x] **Persistence:** Memories successfully saved to Qdrant.
 
+### Phase 3.5: Visual Autonomous Learning (Sprint 35)
+**Goal:** Enable the AI to "see" and "learn" from a laptop screen via HDMI input (simulated for now).
+
+- **Core Architecture:**
+    - [x] Refined `TeacherService` for visual sessions.
+    - [x] Implemented `MockScreenCaptureProvider` (uses `assets/mock/laptop_screen.png`).
+- **UI Implementation:**
+    - [x] Enhanced `VisionSpikePage` as Teacher Mode.
+    - [x] Added "Teacher Mode" entry point to Home Page AppBar.
+    - [x] Added Toggle for Mock/HDMI Input.
+- **Autonomous Actions:**
+    - [x] Teach AI to click/type based on identified elements (Enhanced Dialog).
+    - [x] **"Curious Agent"**: Implemented Active Learning (`_testAction`) where the agent clicks, observes consequences, and auto-saves the behavior.
+
+### Phase 3.6: The Crawler & Advanced Knowledge (Current)
+**Goal:** Automate the learning process completely and deepen understanding beyond just "Click X".
+
+- [ ] **Data Structure for Instructions:**
+    - [ ] Define Schema for "Student Instructions" (YAML/JSON).
+    - [ ] Protocol for defining `Goal`, `Action`, and `ExpectedResult`.
+- [ ] **Context/Fact Learning:**
+    - [ ] Ability to teach "Facts" (e.g., "This region IS the Slide Editor").
+    - [ ] Store Memory Type: `TYPE_FACT` vs `TYPE_ACTION`.
+- [ ] **Autonomous Crawler:**
+    - [ ] **Crawler UI:** Add `Crawl` mode to Teacher.
+    - [ ] **Logic:** Loop through unvisited elements -> `Test Action` -> Record Consequence.
+    - [ ] **Navigation Handling:** Handle "Back" or State Referencing to explore deeper.
+- [ ] **Mock Evolution:**
+    - [ ] Create complex Mock Scenario (PowerPoint: Home -> Blank Pres -> Slide Editor).
+
 ### Phase 4: The "Student" Mode (Execution)
 Goal: Execute tasks by recalling memories or reasoning. **(Next Up)**
 
-- [ ] **Goal Parsing:**
-    - [ ] Simple Regex/Keyword matcher (e.g., "Click [TEXT]").
-    - [ ] Semantic matcher (Embed user instruction -> Find closest Memory).
-- [ ] **Recall Logic:**
-    - [ ] Query Qdrant with current screen Context + Goal Vector.
-    - [ ] Filter results by score threshold.
-- [ ] **Execution Engine:**
-    - [ ] Retrieve `(x, y)` from best memory.
-    - [ ] **Re-Calibration:** Locate the anchor feature (text) in the *current* view to adjust `(x, y)` offset.
-    - [ ] Send HID Click.
-
-### Phase 5: The "Final Product" (Script Runner)
-Goal: Execute written test steps from a MD document.
-
-- [ ] **Script Reader:** Parse `test_*.md` files.
-- [ ] **Test Runner UI:** Show current step, status (Pass/Fail), and logs.
-- [ ] **Reporting:** Generate a run report.
-
-## Backlog / Technical Tasks
-- [ ] **Optimized OCR w/ Cropping:** Don't OCR the whole frame, just the active window.
-- [ ] **Visual Debugger:** A web UI to see what the agent sees in real-time.
+- [ ] **Planner (The Brain):**
+    - [ ] Receive High-Level Goal (e.g., "Create Presentation").
+    - [ ] Query Qdrant for relevant Memories (Actions + Facts).
+    - [ ] Formulate a Plan (Sequence of Actions).
+- [ ] **Execution Loop:**
+    - [ ] Execute Step 1 -> Verify State (Vision) -> Execute Step 2.
+    - [ ] Error Recovery: Re-plan if state doesn't match expectation.
+- [ ] ...
 

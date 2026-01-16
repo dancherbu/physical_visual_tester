@@ -277,6 +277,7 @@ class _EyeActionsLogViewState extends State<EyeActionsLogView> {
                       : rotationForCamera(_camera!.sensorOrientation),
                   cameraLensDirection:
                       _camera?.lensDirection ?? CameraLensDirection.back,
+                  learnedTexts: const {}, // No learning in Log View
                 ),
               ),
             ),

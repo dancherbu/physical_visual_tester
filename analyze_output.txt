@@ -1,0 +1,37 @@
+Resolving dependencies...
+Downloading packages...
+  characters 1.4.0 (1.4.1 available)
+  dartcv4 2.1.0+1 (2.2.0 available)
+  matcher 0.12.17 (0.12.18 available)
+  material_color_utilities 0.11.1 (0.13.0 available)
+  test_api 0.7.7 (0.7.9 available)
+Got dependencies!
+5 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Analyzing physical_visual_tester...                             
+
+warning - The value of the field '_lastUiState' isn't used - lib\shell\eye_actions_log_view.dart:37:12 - unused_field
+warning - The value of the local variable 'scale' isn't used - lib\shell\eye_actions_log_view.dart:254:15 - unused_local_variable
+warning - The value of the field '_connecting' isn't used - lib\shell\main_shell.dart:19:8 - unused_field
+warning - The value of the field '_connectError' isn't used - lib\shell\main_shell.dart:20:11 - unused_field
+warning - Unused import: '../../vision/ocr_models.dart' - lib\spikes\brain\qdrant_service.dart:3:8 - unused_import
+warning - The value of the field '_hid' isn't used - lib\spikes\vision\vision_spike_page.dart:40:20 - unused_field
+warning - The value of the field '_latestImage' isn't used - lib\spikes\vision\vision_spike_page.dart:74:16 - unused_field
+  error - Undefined name 'defaultAssetBundle' - lib\spikes\vision\vision_spike_page.dart:90:37 - undefined_identifier
+warning - The value of the local variable '<unnamed>' isn't used - lib\spikes\vision\vision_spike_page.dart:398:16 - unused_local_variable
+  error - Expected an identifier - lib\spikes\vision\vision_spike_page.dart:493:5 - missing_identifier
+   info - An uninitialized variable should have an explicit type annotation - lib\spikes\vision\vision_spike_page.dart:493:6 - prefer_typing_uninitialized_variables
+   info - Don't use 'BuildContext's across async gaps - lib\spikes\vision\vision_spike_page.dart:500:22 - use_build_context_synchronously
+  error - Undefined name 'txt' - lib\spikes\vision\vision_spike_page.dart:558:12 - undefined_identifier
+  error - Undefined name 'txt' - lib\spikes\vision\vision_spike_page.dart:560:19 - undefined_identifier
+  error - Undefined name 'txt' - lib\spikes\vision\vision_spike_page.dart:562:19 - undefined_identifier
+  error - Undefined name 'txt' - lib\spikes\vision\vision_spike_page.dart:564:19 - undefined_identifier
+  error - Undefined name 'txt' - lib\spikes\vision\vision_spike_page.dart:566:19 - undefined_identifier
+warning - The value of the local variable 'actionsTaken' isn't used - lib\spikes\vision\vision_spike_page.dart:674:10 - unused_local_variable
+warning - The value of the local variable 'centerImage' isn't used - lib\spikes\vision\vision_spike_page.dart:828:11 - unused_local_variable
+warning - The value of the field '_lastSize' isn't used - lib\vision\calibration_overlay.dart:24:13 - unused_field
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\vision\calibration_overlay.dart:80:42 - deprecated_member_use
+   info - Unnecessary braces in a string interpolation - lib\vision\ocr_models.dart:98:54 - unnecessary_brace_in_string_interps
+warning - Duplicate import - lib\vision\vision_overlay_painter.dart:6:8 - duplicate_import
+  error - The field 'rotation' can't be initialized by multiple parameters in the same constructor - lib\vision\vision_overlay_painter.dart:17:19 - duplicate_field_formal_parameter
+

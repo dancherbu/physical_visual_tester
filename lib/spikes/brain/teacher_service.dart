@@ -114,8 +114,8 @@ class TeacherService {
   /// Returns a list of labels that likely correspond to actionable buttons/menus.
   Future<List<String>> suggestActionableFeatures(String base64Image) async {
     const prompt = 'Look at this software interface. '
-        'List the text labels of the 10 most important actionable buttons, tabs, or menus you see. '
-        'Output purely as a comma-separated list. Example: File, Edit, Save, Search, Settings.';
+        'List the text labels of ALL actionable buttons, tabs, links, or menus you see. '
+        'Output purely as a comma-separated list. Example: File, Edit, Save, Login, Search, Settings, Help.';
 
     try {
       final response = await ollama.generate(
@@ -132,6 +132,30 @@ class TeacherService {
     } catch (e) {
       debugPrint('Auto-discovery failed: $e');
       return [];
+    }
+  }
+  /// Compares two images to determine the effect of an action.
+  Future<String> analyzeConsequence({
+    required String base64Before,
+    required String base64After,
+    required String actionLabel,
+  }) async {
+    final prompt = 'I performed an action: "$actionLabel". '
+        'Image 1 is BEFORE. Image 2 is AFTER. '
+        'Describe what changed in a single short phrase (e.g., "Opened Settings", "Showed Modal", "Navigated to Dashboard"). '
+        'If the images are effectively identical or nothing important happened, output exactly "NO_CHANGE".';
+
+    try {
+      final response = await ollama.generate(
+        prompt: prompt,
+        images: [base64Before, base64After], // Multimodal: Pass both images
+        numPredict: 40,
+        temperature: 0.1,
+      );
+      return response.trim();
+    } catch (e) {
+      debugPrint('Consequence analysis failed: $e');
+      return 'NO_CHANGE';
     }
   }
 }

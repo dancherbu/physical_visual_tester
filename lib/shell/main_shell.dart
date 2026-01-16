@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../hid/method_channel_hid_adapter.dart';
 import 'dashboard_sheet.dart';
 import 'eye_actions_log_view.dart';
+import '../spikes/vision/vision_spike_page.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -63,6 +64,22 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Physical Visual Tester'),
+        actions: [
+          IconButton(
+            tooltip: 'Teacher Mode',
+            icon: const Icon(Icons.school),
+            onPressed: () {
+               // Launch Vision Spike (Teacher Mode)
+               Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const VisionSpikePage()),
+               );
+            },
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           // 1. The "Eye" View (Background, always visible but covered by sheet when expanded)

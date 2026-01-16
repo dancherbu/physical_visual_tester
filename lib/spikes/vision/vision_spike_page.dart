@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart'; // rootBundle
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -54,10 +55,18 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
   bool _busy = false;
   bool _calibrating = false;
   bool _teaching = false;
+  bool _crawling = false;
 
   List<OcrBlock> _blocks = const [];
+  // Track which blocks we have successfully learned/saved to Memory
+  final Set<String> _learnedTexts = {};
   UIState? _lastUiState;
   String? _error;
+
+  // Mock Mode
+  bool _useMock = false;
+  List<String> _mockAssets = [];
+  String? _currentMockAsset;
 
   int _imageWidth = 0;
   int _imageHeight = 0;
@@ -73,6 +82,31 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
   void initState() {
     super.initState();
     unawaited(_initCamera());
+    unawaited(_initMocks());
+  }
+
+  Future<void> _initMocks() async {
+    try {
+      final manifestContent = await rootBundle.loadString('AssetManifest.json');
+      final Map<String, dynamic> manifestMap = json.decode(manifestContent);
+      final mocks = manifestMap.keys
+          .where((String key) => key.contains('assets/mock/') && key.endsWith('.png'))
+          .toList();
+      
+      setState(() {
+        _mockAssets = mocks;
+        if (mocks.isNotEmpty) {
+           // Default to home if available
+           if (mocks.any((m) => m.contains('ppt_home'))) {
+              _currentMockAsset = mocks.firstWhere((m) => m.contains('ppt_home'));
+           } else {
+              _currentMockAsset = mocks.first;
+           }
+        }
+      });
+    } catch (e) {
+      debugPrint('Failed to load AssetManifest: $e');
+    }
   }
 
   @override
@@ -256,7 +290,7 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
     if (_busy) return;
 
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) {
+    if (!_useMock && (controller == null || !controller.value.isInitialized)) {
       setState(() => _error = 'Camera not ready.');
       return;
     }
@@ -267,12 +301,30 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
     });
 
     try {
-      // 1. Capture a high-quality JPEG
-      final file = await controller.takePicture();
+      String path;
+      if (_useMock) {
+        // Load from assets -> Temp File
+        final asset = _currentMockAsset ?? 'assets/mock/laptop_screen.png';
+        final byteData = await rootBundle.load(asset);
+        final buffer = byteData.buffer;
+        final tempDir = Directory.systemTemp;
+        
+        // Use unique name to avoid caching issues if reusing name or something?
+        // Actually same name is fine, we overwrite.
+        final tempFile = File('${tempDir.path}/mock_screen.png');
+        await tempFile.writeAsBytes(
+            buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
+        path = tempFile.path;
+      } else {
+        final file = await controller!.takePicture();
+        path = file.path;
+      }
+
+      final file = File(path);
       final bytes = await file.readAsBytes();
       
       // 2. Create InputImage from file
-      final input = InputImage.fromFilePath(file.path);
+      final input = InputImage.fromFilePath(path);
 
       // 3. Process
       final recognized = await _recognizer.processImage(input);
@@ -373,52 +425,112 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
     if (!mounted) return;
 
     final goalController = TextEditingController(text: suggestion);
-    final result = await showDialog<String>(
+    String actionType = 'click'; // click, type
+    final textParamController = TextEditingController();
+
+    final result = await showDialog<Map<String, String>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Teach: What are we doing?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Action: Click "${block.text}" at ${clickCoords.x.toStringAsFixed(2)}, ${clickCoords.y.toStringAsFixed(2)}'),
-            const SizedBox(height: 10),
-            if (suggestion.isNotEmpty)
-               Text('🤖 AI Suggests: "$suggestion"', style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: goalController,
-              decoration: const InputDecoration(
-                hintText: 'e.g. "Click Search Bar"',
-                border: OutlineInputBorder(),
-                labelText: 'Label / Goal'
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Teach: What are we doing?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Block: "${block.text}"'),
+              const SizedBox(height: 10),
+              DropdownButton<String>(
+                value: actionType,
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'click', child: Text('Click Element')),
+                  DropdownMenuItem(value: 'type', child: Text('Type Text')),
+                ],
+                onChanged: (v) => setState(() => actionType = v!),
               ),
-              autofocus: true,
+              const SizedBox(height: 10),
+              if (actionType == 'type')
+                TextField(
+                  controller: textParamController,
+                  decoration: const InputDecoration(
+                    labelText: 'Text to type',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              const SizedBox(height: 10),
+              if (suggestion.isNotEmpty)
+                 Text('🤖 Suggestion: "$suggestion"', style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: goalController,
+                decoration: const InputDecoration(
+                  hintText: 'e.g. "Login"',
+                  border: OutlineInputBorder(),
+                  labelText: 'Goal Description'
+                ),
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, {'test_action': 'true', 'goal': 'test'}), 
+                child: const Text('🧪 Test Action')
+            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, {
+                'goal': goalController.text,
+                'type': actionType,
+                'param': textParamController.text,
+              }),
+              child: const Text('Learn'),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, goalController.text), child: const Text('Learn')),
-        ],
       ),
     );
 
-    if (result == null || result.trim().isEmpty) return;
+
+    if (result == null || result['goal']!.trim().isEmpty) return;
+
+    if (result.containsKey('test_action')) {
+       // User chose to "Test" instead of immediately learn
+       Navigator.pop(context); // Close dialog
+       await _testAction(block, clickCoords);
+       return;
+    }
+
+    _finalizeLearning(result, state, block, clickCoords);
+  }
+
+  Future<void> _finalizeLearning(Map<String, String> result, UIState state, OcrBlock block, Point<double> clickCoords) async {
+    final teacher = _teacher;
+    if (teacher == null) return;
 
     setState(() => _busy = true);
     try {
+      final actionPayload = <String, dynamic>{
+        'type': result['type'], // click or type
+        'x': clickCoords.x,
+        'y': clickCoords.y,
+        'target_text': block.text,
+      };
+      
+      if (result['type'] == 'type') {
+        actionPayload['text'] = result['param'];
+      }
+
       await teacher.learnTask(
         state: state,
-        goal: result,
-        action: {
-          'type': 'click',
-          'x': clickCoords.x,
-          'y': clickCoords.y,
-          'target_text': block.text,
-        },
+        goal: result['goal']!,
+        action: actionPayload,
       );
+      
       if (mounted) {
+        setState(() {
+          _learnedTexts.add(block.text);
+        });
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lesson Saved to Memory!')));
       }
     } catch (e) {
@@ -426,6 +538,191 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
     } finally {
       setState(() => _busy = false);
     }
+  }
+
+  Future<void> _testAction(OcrBlock block, Point<double> clickCoords) async {
+    final teacher = _teacher;
+    if (teacher == null || _lastImageBytes == null) return;
+    
+    // 1. Capture BEFORE
+    final beforeBytes = _lastImageBytes!;
+    final beforeBase64 = base64Encode(beforeBytes);
+    
+    setState(() => _busy = true);
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Testing Action...')));
+
+    // 2. Perform Action (Simulate Click in Mock World)
+    if (_useMock) {
+       // Basic Router Simulation
+       final txt = block.text.toLowerCase();
+       if (txt.contains('login')) {
+          _currentMockAsset = 'assets/mock/screen_dashboard.png';
+       } else if (txt.contains('settings')) {
+          _currentMockAsset = 'assets/mock/screen_settings.png';
+       } else if (txt.contains('new presentation')) {
+          _currentMockAsset = 'assets/mock/powerpoint/ppt_editor_home.png';
+       } else if (txt.contains('insert')) {
+          _currentMockAsset = 'assets/mock/powerpoint/ppt_editor_insert.png';
+       } else if (txt.contains('home')) {
+          if (_currentMockAsset!.contains('ppt_')) {
+             _currentMockAsset = 'assets/mock/powerpoint/ppt_editor_home.png';
+          }
+       } else {
+         // Default logic
+         if (_currentMockAsset?.contains('settings') == true) {
+             _currentMockAsset = 'assets/mock/screen_dashboard.png';
+         }
+       }
+       // Force reload
+       await Future.delayed(const Duration(milliseconds: 500));
+       await _captureAndOcr(); 
+    } else {
+       // Real HID: Send click
+       // await _hid.sendClick(clickCoords);
+       // await Future.delayed(const Duration(seconds: 2));
+       // await _captureAndOcr();
+       
+       // Just wait for now
+       await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    // 3. Capture AFTER
+    final afterBytes = _lastImageBytes!; // Updated by _captureAndOcr
+    final afterBase64 = base64Encode(afterBytes);
+    
+    // 4. Analyze
+    try {
+      final analysis = await teacher.analyzeConsequence(
+        base64Before: beforeBase64, 
+        base64After: afterBase64, 
+        actionLabel: block.text
+      );
+      
+      if (!mounted) return;
+      
+      
+      if (!mounted) return;
+      
+      // 5. Evaluate Result
+      final lower = analysis.toLowerCase();
+      // Valid if not "no_change" and not "unknown"
+      final success = !lower.contains('no_change') && 
+                      !lower.contains('unknown') && 
+                      !lower.contains('no visible change') &&
+                      analysis.length > 2;
+
+      if (success) {
+         // AUTO-SAVE
+         await _finalizeLearning({
+             'goal': analysis, 
+             'type': 'click',
+             'param': '' 
+         }, _lastUiState!, block, clickCoords);
+
+         if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Auto-Learned Action: "$analysis"'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 4),
+              )
+            );
+         }
+      } else {
+          // Fallback to Manual Inspection
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Analysis Uncertain'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                   const Text('I clicked it, but I am not sure what happened.'),
+                   const SizedBox(height: 10),
+                   Text('AI Output: "$analysis"', style: const TextStyle(fontStyle: FontStyle.italic)),
+                   const SizedBox(height: 20),
+                   const Text('Manual Review Required.'),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context), 
+                  child: const Text('Discard')
+                ),
+                // Could allow manual save here too
+              ],
+            ),
+          );
+      }
+      
+    } catch (e) {
+      if(!_crawling) setState(() => _error = 'Analysis failed: $e');
+    } finally {
+      if(!_crawling) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _startCrawl() async {
+     if (_homographyMatrix == null || _teacher == null) return;
+     setState(() { _crawling = true; _busy = true; });
+     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Starting Autonomous Crawler...')));
+     
+     // BFS/DFS Queue?
+     // For now, simple greedy pass on CURRENT screen
+     // Ideally we re-scan after every action.
+     
+     int actionsTaken = 0;
+     const maxActions = 5; // Safety limit
+     
+     try {
+       for (int i=0; i<maxActions; i++) {
+          if (!mounted || !_crawling) break;
+          
+          // 1. Identify candidates
+          final candidates = _blocks.where((b) {
+             final t = b.text.toLowerCase();
+             // Ignore obviously non-actionable or already learned
+             if (_learnedTexts.contains(b.text)) return false;
+             if (t.length < 3) return false;
+             return true; 
+          }).toList();
+          
+          if (candidates.isEmpty) {
+             setState(() => _error = 'Crawl finished: No new candidates.');
+             break;
+          }
+          
+          // 2. Pick one (Heuristic: Top-Left or Largest?)
+          // We pick the first valid one.
+          final target = candidates.first;
+          
+           // Calculate Screen Coords
+           final cx = target.boundingBox.left + target.boundingBox.width / 2;
+           final cy = target.boundingBox.top + target.boundingBox.height / 2;
+           
+           final rot = _camera == null ? InputImageRotation.rotation0deg : rotationForCamera(_camera!.sensorOrientation);
+           final lens = _camera?.lensDirection ?? CameraLensDirection.back;
+           final imgSize = Size(_imageWidth.toDouble(), _imageHeight.toDouble());
+           final previewSize = const Size(1.0, 1.0); 
+
+           final normX = translateX(cx, rot, previewSize, imgSize, lens);
+           final normY = translateY(cy, rot, previewSize, imgSize, lens);
+           
+           final screenPt = HomographyLogic.project(Point(normX, normY), _homographyMatrix!);
+
+          // 3. Test Action
+          await _testAction(target, screenPt); // This will click, move screen, save memory
+          actionsTaken++;
+          
+          // 4. Wait for stabilize (already in testAction?)
+          // If screen changed, _blocks is updated.
+          // Loop continues with NEW blocks.
+       }
+     } catch (e) {
+        setState(() => _error = 'Crawl error: $e');
+     } finally {
+        setState(() { _crawling = false; _busy = false; });
+     }
   }
 
   Future<void> _autoScan() async {
@@ -500,6 +797,10 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
              }
            );
            learned++;
+           // Mark as learned so it turns Green
+           setState(() {
+              _learnedTexts.add(match.text);
+           });
         }
       }
       
@@ -561,8 +862,13 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
         title: const Text('Vision Spike'),
         actions: [
           IconButton(
+            tooltip: _crawling ? 'Stop Crawl' : 'Start Crawler',
+            onPressed: (_teacher != null && !_busy) ? (_crawling ? () => setState(() => _crawling=false) : _startCrawl) : null,
+            icon: Icon(Icons.bug_report, color: _crawling ? Colors.red : null),
+          ),
+          IconButton(
             tooltip: 'Auto Scan Scene',
-            onPressed: (_teacher != null && !_busy && !_teaching) ? _autoScan : null,
+            onPressed: (_teacher != null && !_busy && !_teaching && !_crawling) ? _autoScan : null,
             icon: const Icon(Icons.travel_explore),
           ),
            IconButton(
@@ -593,14 +899,42 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
             onPressed: _starting ? null : _initCamera,
             icon: const Icon(Icons.refresh),
           ),
+          PopupMenuButton<String>(
+             tooltip: 'Select Mock Image',
+             // enabled: true, // Always enabled so we can toggle ON
+             icon: Icon(Icons.monitor, color: _useMock ? Colors.amber : Colors.grey),
+             onSelected: (val) {
+               if (val == '__TOGGLE__') {
+                 setState(() => _useMock = !_useMock);
+               } else {
+                 setState(() => _currentMockAsset = val);
+                 // Trigger re-capture if desired, or just show it
+               }
+             },
+             itemBuilder: (context) {
+               return [
+                 const PopupMenuItem(
+                   value: '__TOGGLE__',
+                   child: Text('Toggle Camera / Mock'),
+                 ),
+                 if (_useMock) 
+                   const PopupMenuDivider(),
+                 if (_useMock)
+                   ..._mockAssets.map((asset) => PopupMenuItem(
+                     value: asset,
+                     child: Text(asset.split('/').last),
+                   )),
+               ];
+             },
+          ),
         ],
       ),
       body: Column(
         children: [
           Expanded(
-            child: _starting
+            child: !_useMock && _starting
                 ? const Center(child: CircularProgressIndicator())
-                : (controller == null || !controller.value.isInitialized)
+                : (!_useMock && (controller == null || !controller.value.isInitialized))
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -617,7 +951,13 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
                           return Stack(
                             fit: StackFit.expand,
                             children: [
-                              CameraPreview(controller),
+                              if (_useMock)
+                                Image.asset(
+                                   _currentMockAsset ?? 'assets/mock/laptop_screen.png',
+                                   fit: BoxFit.contain,
+                                )
+                              else
+                                CameraPreview(controller!),
                               if (!_calibrating)
                                 GestureDetector(
                                     onTapUp: (details) {
@@ -663,9 +1003,10 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
                                             ? InputImageRotation.rotation0deg
                                             : rotationForCamera(
                                                 _camera!.sensorOrientation),
-                                        cameraLensDirection:
-                                            _camera?.lensDirection ??
-                                                CameraLensDirection.back,
+                                        cameraLensDirection: _useMock 
+                                            ? CameraLensDirection.back 
+                                            : (_camera?.lensDirection ?? CameraLensDirection.back),
+                                        learnedTexts: _learnedTexts,
                                       ),
                                     ),
                                 ),
