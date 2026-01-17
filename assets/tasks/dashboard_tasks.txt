@@ -1,0 +1,4 @@
+1. Click "Analytics" tab
+2. Click "Export Report"
+3. Click "Date Range"
+4. Select "Last 30 Days"

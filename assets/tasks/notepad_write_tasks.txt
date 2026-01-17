@@ -1,0 +1,4 @@
+1. Click text area
+2. Type "Hello World"
+3. Press Enter
+4. Type "This is a robot."

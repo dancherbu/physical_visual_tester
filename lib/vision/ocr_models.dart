@@ -29,6 +29,17 @@ class OcrBlock {
     // simplified for LLM token efficiency
     return '"$text" at ${boundingBox.center}'; 
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OcrBlock &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          boundingBox == other.boundingBox;
+
+  @override
+  int get hashCode => text.hashCode ^ boundingBox.hashCode;
 }
 
 @immutable
@@ -57,6 +68,20 @@ class BoundingBox {
         'right': right,
         'bottom': bottom,
       };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BoundingBox &&
+          runtimeType == other.runtimeType &&
+          left == other.left &&
+          top == other.top &&
+          right == other.right &&
+          bottom == other.bottom;
+
+  @override
+  int get hashCode =>
+      left.hashCode ^ top.hashCode ^ right.hashCode ^ bottom.hashCode;
 }
 
 @immutable

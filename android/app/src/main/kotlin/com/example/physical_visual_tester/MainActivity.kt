@@ -434,6 +434,17 @@ class MainActivity : FlutterActivity() {
 							)
 						)
 					}
+					"openAppSettings" -> {
+						try {
+							val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+							intent.data = android.net.Uri.fromParts("package", packageName, null)
+							startActivity(intent)
+							result.success(null)
+						} catch (e: Exception) {
+							logError("Failed to open settings: ${e.message}")
+							result.error("SETTINGS_FAILED", e.message, null)
+						}
+					}
 					else -> result.notImplemented()
 				}
 			}

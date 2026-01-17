@@ -12,7 +12,8 @@
   - **Brains**: Local LLM (Ollama) + Vector Memory (Qdrant). ✅ **Connected**
 - **The Brain ("Teacher" Mode)**: 
   - **Workflow**: Watch User -> Capture State -> Ask Vision AI "What is this?" -> Save Memory.
-  - **Status**: 🚧 **Ready for Testing** (Waiting for `llava` model).
+  - **Active Learning**: Agent crawls UI -> Clicks Elements -> Observes Consequence -> Auto-Saves Memory.
+  - **Status**: ✅ **Partially Functional** (Mock Mode Crawling working).
 
 ## Core Documentation
 - **[TRACKER.md](./TRACKER.md)**: The Master Plan. **READ THIS FIRST**.
@@ -22,7 +23,7 @@
 ## Current Focus
 Validating the "Teacher" loop: Can we point at a screen, click a button, and have the AI correctly identify/remember the action? State (as of Jan 2026)
 - **HID Layer:** Complete (Keyboard & Mouse implemented).
-- **Vision Layer:** 🚧 BROKEN / Debugging. Transitioning to "Teacher" model (RAG+Ollama).
+- **Vision Layer:** 🚧 Simulated via Mocks. Real Camera blocked by Hardware (HDMI Card). Crawling Logic is VALID.
 
 ## Workflow Rules
 - **Safety:** Verify commands before running.

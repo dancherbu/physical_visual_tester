@@ -1,0 +1,5 @@
+1. Click "Username" field
+2. Type "danboakye"
+3. Click "Password" field
+4. Type "supersecret123"
+5. Click "Login" button

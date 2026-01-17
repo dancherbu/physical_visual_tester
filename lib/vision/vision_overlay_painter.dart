@@ -14,6 +14,7 @@ class VisionOverlayPainter extends CustomPainter {
     required this.rotation,
     required this.cameraLensDirection,
     this.learnedTexts = const {},
+    this.highlightedBlock,
   });
 
   final List<OcrBlock> blocks;
@@ -22,6 +23,7 @@ class VisionOverlayPainter extends CustomPainter {
   final Size previewSize;
   final InputImageRotation rotation;
   final CameraLensDirection cameraLensDirection;
+  final OcrBlock? highlightedBlock;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -36,9 +38,33 @@ class VisionOverlayPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0
       ..color = Colors.green;
+      
+    final paintHighlighted = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.0
+      ..color = Colors.cyanAccent; // Cyan for the "Active" block
+
+    // If we have a highlight, dim everything else
+    final hasHighlight = highlightedBlock != null;
 
     for (final b in blocks) {
       final isLearned = learnedTexts.contains(b.text);
+      final isHighlighted = highlightedBlock == b;
+      
+      Paint paintToUse;
+      if (isHighlighted) {
+         paintToUse = paintHighlighted;
+      } else if (hasHighlight) {
+         // Dim mode: very faint
+         paintToUse = Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.0
+            ..color = Colors.grey.withOpacity(0.2); 
+      } else {
+         // Normal mode
+         paintToUse = isLearned ? paintLearned : paintUnlearned;
+      }
+
       final rect = b.boundingBox;
       
       final left = translateX(
@@ -52,10 +78,20 @@ class VisionOverlayPainter extends CustomPainter {
 
       final dstRect = Rect.fromLTRB(left, top, right, bottom);
 
-      canvas.drawRect(
-        dstRect,
-        isLearned ? paintLearned : paintUnlearned,
-      );
+      canvas.drawRect(dstRect, paintToUse);
+      
+      if (isHighlighted) {
+         // Draw Crosshair at Center
+         final cx = dstRect.center.dx;
+         final cy = dstRect.center.dy;
+         final paintCross = Paint()
+           ..color = Colors.red
+           ..strokeWidth = 4.0;
+         // Horizontal
+         canvas.drawLine(Offset(cx - 10, cy), Offset(cx + 10, cy), paintCross);
+         // Vertical
+         canvas.drawLine(Offset(cx, cy - 10), Offset(cx, cy + 10), paintCross);
+      }
       
       if (isLearned) {
          // Maybe draw a checkmark?
@@ -76,6 +112,36 @@ class VisionOverlayPainter extends CustomPainter {
          textPainter.paint(canvas, dstRect.topRight - const Offset(6, 6)); 
       }
     }
+
+    // Force draw Highlighted Block separately (even if not in 'blocks')
+    // This handles the case where the screen refreshed (blocks changed), but we still
+    // want to show where the AI originally clicked (the "Ghost" target).
+    if (highlightedBlock != null) {
+      final rect = highlightedBlock!.boundingBox;
+      final left = translateX(rect.left, rotation, size, imageSize, cameraLensDirection);
+      final top = translateY(rect.top, rotation, size, imageSize, cameraLensDirection);
+      final right = translateX(rect.right, rotation, size, imageSize, cameraLensDirection);
+      final bottom = translateY(rect.bottom, rotation, size, imageSize, cameraLensDirection);
+      final dstRect = Rect.fromLTRB(left, top, right, bottom);
+
+      // Draw Cyan Box
+      final paintHighlighted = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.0
+      ..color = Colors.cyanAccent;
+      
+      canvas.drawRect(dstRect, paintHighlighted);
+
+      // Draw Red Crosshair
+      final cx = dstRect.center.dx;
+      final cy = dstRect.center.dy;
+      final paintCross = Paint()
+        ..color = Colors.red
+        ..strokeWidth = 4.0;
+        
+      canvas.drawLine(Offset(cx - 15, cy), Offset(cx + 15, cy), paintCross);
+      canvas.drawLine(Offset(cx, cy - 15), Offset(cx, cy + 15), paintCross);
+    }
   }
 
   @override
@@ -85,7 +151,8 @@ class VisionOverlayPainter extends CustomPainter {
         oldDelegate.previewSize != previewSize ||
         oldDelegate.rotation != rotation ||
         oldDelegate.cameraLensDirection != cameraLensDirection ||
-        oldDelegate.learnedTexts != learnedTexts;
+        oldDelegate.learnedTexts != learnedTexts ||
+        oldDelegate.highlightedBlock != highlightedBlock;
   }
 }
 

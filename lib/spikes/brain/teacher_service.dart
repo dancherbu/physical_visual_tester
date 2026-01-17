@@ -134,6 +134,51 @@ class TeacherService {
       return [];
     }
   }
+
+  /// Deeply analyzes the screen using Vision + OCR Context.
+  /// Returns a Map of "Text" -> "Description/Type".
+  Future<Map<String, String>> analyzeScreenContext({
+    required String base64Image,
+    required List<OcrBlock> blocks,
+  }) async {
+    // Filter blocks to reduce token count (ignore small noise)
+    final candidates = blocks.where((b) => b.boundingBox.width > 20 && b.boundingBox.height > 10).toList();
+    
+    final blockList = candidates.map((b) => '"${b.text}"').join(', ');
+    
+    final prompt = 'I see a UI with these text blocks: [$blockList]. '
+        'Based on the image, identify which of these are likely actionable buttons or inputs. '
+        'For each actionable item, explain what it does in 1 short sentence. '
+        'Format: "Button Name": "Description". '
+        'Example: \n'
+        '"File": "Opens file menu"\n'
+        '"Submit": "Submits the form"\n'
+        'Only output the list.';
+
+    try {
+      final response = await ollama.generate(
+        prompt: prompt,
+        images: [base64Image],
+        numPredict: 256, 
+        temperature: 0.2,
+      );
+      
+      final result = <String, String>{};
+      final lines = response.split('\n');
+      for (final line in lines) {
+        final parts = line.split(':');
+        if (parts.length >= 2) {
+           final key = parts[0].trim().replaceAll('"', '').replaceAll("'", "");
+           final val = parts.sublist(1).join(':').trim().replaceAll('"', '');
+           result[key] = val;
+        }
+      }
+      return result;
+    } catch (e) {
+      debugPrint('Deep analysis failed: $e');
+      return {};
+    }
+  }
   /// Compares two images to determine the effect of an action.
   Future<String> analyzeConsequence({
     required String base64Before,

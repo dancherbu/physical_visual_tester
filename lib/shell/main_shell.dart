@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../hid/method_channel_hid_adapter.dart';
+import '../hid/hid_reconnection_dialog.dart';
 import 'dashboard_sheet.dart';
 import 'eye_actions_log_view.dart';
+import '../robot/robot_tester_page.dart';
 import '../spikes/vision/vision_spike_page.dart';
 
 class MainShell extends StatefulWidget {
@@ -37,7 +39,11 @@ class _MainShellState extends State<MainShell> {
       await _hid.connect();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('HID: Auto-connect signal sent.')),
+          const SnackBar(
+            content: Text('✅ HID Connected'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
         );
       }
     } catch (e) {
@@ -45,10 +51,14 @@ class _MainShellState extends State<MainShell> {
         setState(() {
           _connectError = e.toString();
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('HID Auto-connect failed: ${e.toString()}'),
-            backgroundColor: Colors.red,
+        
+        // Show reconnection dialog instead of just a snackbar
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => HidReconnectionDialog(
+            hid: _hid,
+            errorMessage: e.toString(),
           ),
         );
       }
@@ -68,13 +78,13 @@ class _MainShellState extends State<MainShell> {
         title: const Text('Physical Visual Tester'),
         actions: [
           IconButton(
-            tooltip: 'Teacher Mode',
-            icon: const Icon(Icons.school),
+            tooltip: 'Robot Mode',
+            icon: const Icon(Icons.smart_toy),
             onPressed: () {
-               // Launch Vision Spike (Teacher Mode)
+               // Launch Robot Tester
                Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const VisionSpikePage()),
+                  MaterialPageRoute(builder: (_) => const RobotTesterPage()),
                );
             },
           ),

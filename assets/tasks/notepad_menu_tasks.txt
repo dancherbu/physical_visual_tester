@@ -1,0 +1,5 @@
+1. Click "File"
+2. Click "Save As"
+3. Click "Filename" field
+4. Type "notes.txt"
+5. Click "Save"

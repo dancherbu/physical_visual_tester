@@ -58,6 +58,7 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
   bool _crawling = false;
 
   List<OcrBlock> _blocks = const [];
+  OcrBlock? _activeBlock; // The block currently being taught/clicked
   // Track which blocks we have successfully learned/saved to Memory
   final Set<String> _learnedTexts = {};
   UIState? _lastUiState;
@@ -83,30 +84,57 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
     super.initState();
     unawaited(_initCamera());
     unawaited(_initMocks());
+    
+    // Auto-init Teacher with defaults
+    _teacher = TeacherService(
+      ollama: OllamaClient(
+          baseUrl: Uri.parse(_ollamaUrl),
+          model: _ollamaModel,
+      ),
+      qdrant: QdrantService(
+          baseUrl: Uri.parse(_qdrantUrl),
+          collectionName: 'pvt_memory',
+      ),
+    );
   }
 
   Future<void> _initMocks() async {
+    List<String> mocks = [];
     try {
       final manifestContent = await rootBundle.loadString('AssetManifest.json');
       final Map<String, dynamic> manifestMap = json.decode(manifestContent);
-      final mocks = manifestMap.keys
-          .where((String key) => key.contains('assets/mock/') && key.endsWith('.png'))
+      mocks = manifestMap.keys
+          .where((String key) => key.contains('assets/mock') && key.endsWith('.png'))
           .toList();
-      
-      setState(() {
-        _mockAssets = mocks;
-        if (mocks.isNotEmpty) {
-           // Default to home if available
-           if (mocks.any((m) => m.contains('ppt_home'))) {
-              _currentMockAsset = mocks.firstWhere((m) => m.contains('ppt_home'));
-           } else {
-              _currentMockAsset = mocks.first;
-           }
-        }
-      });
     } catch (e) {
       debugPrint('Failed to load AssetManifest: $e');
     }
+
+    // FALLBACK: If dynamic load fails, use hardcoded list
+    if (mocks.isEmpty) {
+       mocks = [
+         'assets/mock/screen_login.png',
+         'assets/mock/screen_dashboard.png',
+         'assets/mock/screen_settings.png',
+         'assets/mock/powerpoint/ppt_home.png',
+         'assets/mock/powerpoint/ppt_editor_home.png',
+         'assets/mock/powerpoint/ppt_editor_insert.png',
+       ];
+    }
+    
+    // Sort for consistency
+    mocks.sort();
+
+    setState(() {
+      _mockAssets = mocks;
+      if (_currentMockAsset == null && mocks.isNotEmpty) {
+         if (mocks.any((m) => m.contains('ppt_home'))) {
+            _currentMockAsset = mocks.firstWhere((m) => m.contains('ppt_home'));
+         } else {
+            _currentMockAsset = mocks.first;
+         }
+      }
+    });
   }
 
   @override
@@ -232,8 +260,21 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
     // We still stream for the preview
     await controller.startImageStream((image) {
       _latestImage = image;
-      _imageWidth = image.width;
-      _imageHeight = image.height;
+      // Only update dimensions from camera if NOT using mock
+      if (!_useMock) {
+        // We use a local variable update to avoid frequent setStates if not needed for UI?
+        // Actually, Painter needs these. But Painter is rebuilt by other signals usually.
+        // However, if we just assign to properties, setState might not be called.
+        // The original code didn't call setState! 
+        // Note: The original code showed:
+        // _imageWidth = image.width;
+        // _imageHeight = image.height;
+        // INSIDE the listener, but OUTSIDE setState.
+        // This is a race condition usually, but works if something else triggers build.
+        
+        _imageWidth = image.width;
+        _imageHeight = image.height;
+      }
     });
 
     setState(() {
@@ -377,6 +418,23 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
 
       SpikeStore.lastUiState = uiState;
       
+      // AUTO-CALIBRATE if Mock Mode
+      // In Mock mode, we render with BoxFit.contain.
+      // We can compute the Perfect Homography Matrix.
+      // AUTO-CALIBRATE if Mock Mode
+      if (_useMock) {
+          // Reset error just in case
+          if (_error?.contains('Calibration') == true) _error = null;
+          
+          setState(() {
+             _homographyMatrix = [
+               1.0, 0.0, 0.0,
+               0.0, 1.0, 0.0,
+               0.0, 0.0, 1.0
+             ];
+          });
+      }
+      
       // cleanup
       try {
         await File(file.path).delete();
@@ -404,6 +462,7 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
     }
 
     // Auto-Labeling Strategy
+    setState(() => _activeBlock = block); // Highlight it
     var suggestion = '';
     // If we have an image, we can try Vision.
     if (_lastImageBytes != null) {
@@ -430,8 +489,11 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
 
     final result = await showDialog<Map<String, String>>(
       context: context,
+      barrierColor: Colors.transparent, 
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
+          backgroundColor: Theme.of(context).dialogBackgroundColor.withOpacity(0.7),
+          elevation: 0,
           title: const Text('Teach: What are we doing?'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -501,7 +563,10 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
        return;
     }
 
-    _finalizeLearning(result, state, block, clickCoords);
+    _finalizeLearning(result, state, block, clickCoords).whenComplete(() {
+       // Clear highlight only after learning is done
+       if (mounted) setState(() => _activeBlock = null);
+    });
   }
 
   Future<void> _finalizeLearning(Map<String, String> result, UIState state, OcrBlock block, Point<double> clickCoords) async {
@@ -548,7 +613,10 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
     final beforeBytes = _lastImageBytes!;
     final beforeBase64 = base64Encode(beforeBytes);
     
-    setState(() => _busy = true);
+    setState(() {
+       _busy = true;
+       _activeBlock = block; // Highlight active block
+    });
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Testing Action...')));
 
     // 2. Perform Action (Simulate Click in Mock World)
@@ -600,9 +668,6 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
       
       if (!mounted) return;
       
-      
-      if (!mounted) return;
-      
       // 5. Evaluate Result
       final lower = analysis.toLowerCase();
       // Valid if not "no_change" and not "unknown"
@@ -632,16 +697,20 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
           // Fallback to Manual Inspection
           showDialog(
             context: context,
+            barrierColor: Colors.transparent, // No dimming
             builder: (context) => AlertDialog(
+              backgroundColor: Colors.black45, // Lighter for better visibility
+              surfaceTintColor: Colors.transparent, // Material 3 fix
+              elevation: 0,
               title: const Text('Analysis Uncertain'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                   const Text('I clicked it, but I am not sure what happened.'),
+                   Text('I clicked "${block.text}", but I am not sure what happened.'),
                    const SizedBox(height: 10),
-                   Text('AI Output: "$analysis"', style: const TextStyle(fontStyle: FontStyle.italic)),
+                   Text('AI Output: "$analysis"', style: const TextStyle(fontWeight: FontWeight.bold)),
                    const SizedBox(height: 20),
-                   const Text('Manual Review Required.'),
+                   const Text('Manual Review Required: If an action occurred, please Teach me. Else Discard.'),
                 ],
               ),
               actions: [
@@ -649,7 +718,14 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
                   onPressed: () => Navigator.pop(context), 
                   child: const Text('Discard')
                 ),
-                // Could allow manual save here too
+                FilledButton(
+                  onPressed: () {
+                     Navigator.pop(context); // close uncertain dialog
+                     // Open Teach Dialog
+                     _teachRecording(block, clickCoords);
+                  }, 
+                  child: const Text('Teach / Correct')
+                ),
               ],
             ),
           );
@@ -659,6 +735,7 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
       if(!_crawling) setState(() => _error = 'Analysis failed: $e');
     } finally {
       if(!_crawling) setState(() => _busy = false);
+      if (mounted) setState(() => _activeBlock = null); // Clear highlight
     }
   }
 
@@ -678,23 +755,79 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
        for (int i=0; i<maxActions; i++) {
           if (!mounted || !_crawling) break;
           
-          // 1. Identify candidates
-          final candidates = _blocks.where((b) {
+          // 1. Scene Understanding (AI)
+          setState(() { _error = 'AI Analyzing Scene...'; });
+          
+          // We need the current image
+          // Assuming _processImage() or similar has populated _latestImage / _currentMock
+          // We'll regenerate the Base64 from _latestImage for the AI
+          String? b64;
+          if (_useMock && _currentMockAsset != null) {
+              final bytes = await DefaultAssetBundle.of(context).load(_currentMockAsset!);
+              b64 = base64Encode(bytes.buffer.asUint8List());
+          } else if (_latestImage != null) {
+              // TODO: Convert CameraImage to JPEG/Base64 (expensive)
+              // For now, assume Mock Mode is primary as per prompt.
+          }
+          
+          List<OcrBlock> aiCandidates = [];
+          
+          if (b64 != null) {
+             final analysis = await _teacher!.analyzeScreenContext(
+               base64Image: b64, 
+               blocks: _blocks
+             );
+             
+             // Map back to blocks
+             // And SAVE MEMORIES (Knowledge Building)
+             for (final entry in analysis.entries) {
+                final match = _blocks.firstWhere(
+                   (b) => b.text.contains(entry.key), 
+                   orElse: () => const OcrBlock(text: '', boundingBox: BoundingBox(left:0,top:0,right:0,bottom:0))
+                );
+                
+                if (match.text.isNotEmpty) {
+                   aiCandidates.add(match);
+                   
+                   // Save 'Memory' of this finding (as requested)
+                   // "Vision computes/create embeddings and saves to qdrant"
+                   await _teacher!.learnTask(
+                     state: UIState(
+                        ocrBlocks: _blocks, 
+                        imageWidth: _imageWidth, imageHeight: _imageHeight, 
+                        derived: const DerivedFlags(hasErrorCandidate:false, hasModalCandidate:false, modalKeywords:[]), 
+                        createdAt: DateTime.now()
+                     ),
+                     goal: entry.value, // e.g. "Opens file menu"
+                     action: {'type': 'click', 'target': match.text},
+                   );
+                }
+             }
+          }
+          
+          // Fallback to heuristic if AI fails or returns nothing (or if not in Mock mode)
+          final finalCandidates = aiCandidates.isNotEmpty ? aiCandidates : _blocks.where((b) {
              final t = b.text.toLowerCase();
-             // Ignore obviously non-actionable or already learned
              if (_learnedTexts.contains(b.text)) return false;
              if (t.length < 3) return false;
+             if (b.boundingBox.top < 80) return false;
+             if (b.text.contains(' - ')) return false;
              return true; 
           }).toList();
+
+          // Sort by Area descending (Largest first)
+          finalCandidates.sort((a, b) => 
+             (b.boundingBox.width * b.boundingBox.height)
+             .compareTo(a.boundingBox.width * a.boundingBox.height)
+          );
           
-          if (candidates.isEmpty) {
+          if (finalCandidates.isEmpty) {
              setState(() => _error = 'Crawl finished: No new candidates.');
              break;
           }
           
-          // 2. Pick one (Heuristic: Top-Left or Largest?)
-          // We pick the first valid one.
-          final target = candidates.first;
+          // 2. Pick the best one
+          final target = finalCandidates.first;
           
            // Calculate Screen Coords
            final cx = target.boundingBox.left + target.boundingBox.width / 2;
@@ -892,8 +1025,9 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
                  setState(() => _calibrating = true);
                }
             },
-            icon: Icon(_calibrating ? Icons.save : Icons.grid_4x4),
+            icon: Icon(_calibrating ? Icons.save : Icons.crop_free), // Changed Icon
           ),
+
           IconButton(
             tooltip: 'Re-init camera',
             onPressed: _starting ? null : _initCamera,
@@ -907,8 +1041,18 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
                if (val == '__TOGGLE__') {
                  setState(() => _useMock = !_useMock);
                } else {
-                 setState(() => _currentMockAsset = val);
-                 // Trigger re-capture if desired, or just show it
+                 setState(() {
+                    _currentMockAsset = val;
+                    _useMock = true; // Force Mock mode if picking a mock
+                 });
+                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                   content: Text('Processing Mock Image...'), 
+                   duration: Duration(milliseconds: 1000)
+                 ));
+                 
+                 // Trigger re-capture with slightly longer delay to allow render
+                 Future.delayed(const Duration(milliseconds: 300), _captureAndOcr);
                }
              },
              itemBuilder: (context) {
@@ -917,9 +1061,7 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
                    value: '__TOGGLE__',
                    child: Text('Toggle Camera / Mock'),
                  ),
-                 if (_useMock) 
                    const PopupMenuDivider(),
-                 if (_useMock)
                    ..._mockAssets.map((asset) => PopupMenuItem(
                      value: asset,
                      child: Text(asset.split('/').last),
@@ -929,134 +1071,129 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: !_useMock && _starting
-                ? const Center(child: CircularProgressIndicator())
-                : (!_useMock && (controller == null || !controller.value.isInitialized))
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(_error ?? 'Camera not initialized.'),
-                        ),
-                      )
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          final previewSize = Size(
-                            constraints.maxWidth,
-                            constraints.maxHeight,
-                          );
+      body: (!_useMock && _starting)
+          ? const Center(child: CircularProgressIndicator())
+          : (!_useMock && (controller == null || !controller.value.isInitialized))
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(_error ?? 'Camera not initialized.'),
+                  ),
+                )
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final previewSize = Size(
+                      constraints.maxWidth,
+                      constraints.maxHeight,
+                    );
 
-                          return Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              if (_useMock)
-                                Image.asset(
-                                   _currentMockAsset ?? 'assets/mock/laptop_screen.png',
-                                   fit: BoxFit.contain,
-                                )
-                              else
-                                CameraPreview(controller!),
-                              if (!_calibrating)
-                                GestureDetector(
-                                    onTapUp: (details) {
-                                      // Naive block hit testing
-                                      // We need to inverse map or project blocks to widget space to hit test.
-                                      // VisionOverlayPainter paints them in Widget Space.
-                                      // So we can project all blocks to Widget Space and check distance.
-                                      
-                                      final tap = details.localPosition;
-                                      final rot = _camera == null ? InputImageRotation.rotation0deg : rotationForCamera(_camera!.sensorOrientation);
-                                      final lens = _camera?.lensDirection ?? CameraLensDirection.back;
-                                      final imgSize = Size(_imageWidth.toDouble(), _imageHeight.toDouble());
-                                      
-                                      OcrBlock? best;
-                                      double bestDist = 10000;
-                                      
-                                      for (final b in _blocks) {
-                                          final cx = b.boundingBox.left + b.boundingBox.width/2;
-                                          final cy = b.boundingBox.top + b.boundingBox.height/2;
-                                          final wx = translateX(cx, rot, previewSize, imgSize, lens);
-                                          final wy = translateY(cy, rot, previewSize, imgSize, lens);
-                                          
-                                          final dist = (Offset(wx, wy) - tap).distance;
-                                          if (dist < 50 && dist < bestDist) { // 50px threshold
-                                              best = b;
-                                              bestDist = dist;
-                                          }
-                                      }
-                                      
-                                      if (best != null) {
-                                          _onBlockTap(best);
-                                      }
-                                    },
-                                    child: CustomPaint(
-                                      painter: VisionOverlayPainter(
-                                        blocks: _blocks,
-                                        imageSize: Size(
-                                          _imageWidth.toDouble(),
-                                          _imageHeight.toDouble(),
-                                        ),
-                                        previewSize: previewSize,
-                                        rotation: _camera == null
-                                            ? InputImageRotation.rotation0deg
-                                            : rotationForCamera(
-                                                _camera!.sensorOrientation),
-                                        cameraLensDirection: _useMock 
-                                            ? CameraLensDirection.back 
-                                            : (_camera?.lensDirection ?? CameraLensDirection.back),
-                                        learnedTexts: _learnedTexts,
-                                      ),
-                                    ),
-                                ),
-                              if (_teaching) 
-                                Positioned(
-                                  bottom: 16,
-                                  left: 0,
-                                  right: 0,
-                                  child: Center(
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                      decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(20)),
-                                      child: const Text('TEACHING MODE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                    ),
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (_useMock)
+                          Image.asset(
+                             _currentMockAsset ?? 'assets/mock/laptop_screen.png',
+                             fit: BoxFit.fill, // FILL strictly for correct alignment
+                          )
+                        else
+                          CameraPreview(controller!),
+                        if (!_calibrating)
+                          GestureDetector(
+                              onTapUp: (details) {
+                                // Naive block hit testing
+                                // We need to inverse map or project blocks to widget space to hit test.
+                                // VisionOverlayPainter paints them in Widget Space.
+                                // So we can project all blocks to Widget Space and check distance.
+                                
+                                final tap = details.localPosition;
+                                final rot = _camera == null ? InputImageRotation.rotation0deg : rotationForCamera(_camera!.sensorOrientation);
+                                final lens = _camera?.lensDirection ?? CameraLensDirection.back;
+                                final imgSize = Size(_imageWidth.toDouble(), _imageHeight.toDouble());
+                                
+                                OcrBlock? best;
+                                double bestDist = 10000;
+                                
+                                for (final b in _blocks) {
+                                    final cx = b.boundingBox.left + b.boundingBox.width/2;
+                                    final cy = b.boundingBox.top + b.boundingBox.height/2;
+                                    final wx = translateX(cx, rot, previewSize, imgSize, lens);
+                                    final wy = translateY(cy, rot, previewSize, imgSize, lens);
+                                    
+                                    final dist = (Offset(wx, wy) - tap).distance;
+                                    if (dist < 50 && dist < bestDist) { // 50px threshold
+                                        best = b;
+                                        bestDist = dist;
+                                    }
+                                }
+                                
+                                if (best != null) {
+                                    _onBlockTap(best);
+                                }
+                              },
+                              child: CustomPaint(
+                                painter: VisionOverlayPainter(
+                                  blocks: _blocks,
+                                  imageSize: Size(
+                                    _imageWidth.toDouble(),
+                                    _imageHeight.toDouble(),
                                   ),
+                                  previewSize: previewSize,
+                                  rotation: _useMock || _camera == null
+                                      ? InputImageRotation.rotation0deg
+                                      : rotationForCamera(
+                                          _camera!.sensorOrientation),
+                                  cameraLensDirection: _useMock 
+                                      ? CameraLensDirection.back 
+                                      : (_camera?.lensDirection ?? CameraLensDirection.back),
+                                  learnedTexts: _learnedTexts,
+                                  highlightedBlock: _activeBlock,
                                 ),
-                              if (_calibrating)
-                                CalibrationOverlay(
-                                  onChanged: _onCalibrationChanged,
-                                  initialPoints: _calibrationPoints,
-                                ),
-                              if (_error != null)
-                                Align(
-                                  alignment: Alignment.topCenter,
-                                  child: Container(
-                                    margin: const EdgeInsets.all(12),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.withValues(alpha: 0.85),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      _error!,
-                                      style: const TextStyle(color: Colors.white),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-          ),
-          _BottomPanel(
-            busy: _busy,
-            streaming: _streaming,
-            blocks: _blocks,
-            uiState: _lastUiState,
-            onCapture: _captureAndOcr,
-          ),
-        ],
+                              ),
+                          ),
+                        if (_teaching) 
+                          Positioned(
+                            bottom: 150, // Moved up to avoid bottom sheet
+                            left: 0,
+                            right: 0,
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(20)),
+                                child: const Text('TEACHING MODE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          ),
+                        if (_calibrating)
+                          CalibrationOverlay(
+                            onChanged: _onCalibrationChanged,
+                            initialPoints: _calibrationPoints,
+                          ),
+                        if (_error != null)
+                          Align(
+                            alignment: Alignment.topCenter,
+                            child: Container(
+                              margin: const EdgeInsets.all(12),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                _error!,
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+      bottomSheet: _BottomPanel(
+        busy: _busy,
+        streaming: _streaming,
+        blocks: _blocks,
+        uiState: _lastUiState,
+        onCapture: _captureAndOcr,
       ),
     );
   }

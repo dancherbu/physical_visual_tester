@@ -1,0 +1,4 @@
+1. Click "Documents" in sidebar
+2. Right click "Project Folder"
+3. Select "Copy"
+4. Click "Address Bar"

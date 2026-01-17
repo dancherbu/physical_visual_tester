@@ -1,0 +1,4 @@
+1. Click "Network & Internet"
+2. Click "Wi-Fi"
+3. Toggle "Wi-Fi" switch
+4. Click "Home"
