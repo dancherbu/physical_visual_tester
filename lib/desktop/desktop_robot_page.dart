@@ -808,7 +808,6 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                     _messages.add(_DesktopChatMessage(sender: 'System', text: "Result: $output"));
                  });
              } else {
-             } else {
                  final error = result.stderr.toString().trim();
                  _log("❌ Command Failed: $error");
              }

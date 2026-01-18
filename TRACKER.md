@@ -112,6 +112,16 @@ The Robot runs a continuous loop:
     - [ ] Direct Windows networking to Ollama/Qdrant (Docker) with health checks.
     - [ ] Config for endpoints per environment.
 
+#### Session Updates (Jan 18, 2026)
+- [x] Desktop shell + UI wiring created.
+- [x] Windows screen capture + Tesseract OCR integrated.
+- [x] Mock screen loader supports assets and local image files.
+- [x] Task list load/analyze added on desktop.
+- [x] Task analysis CLI added with normalization + rerank options.
+- [x] Context-aware task verification (target visibility) added for desktop and mobile.
+- [x] Ollama step normalization + rerank added to verification pipeline.
+- [x] Windows build succeeds; Android release build succeeds (R8 disabled).
+
 ### Phase 3: Hardware Reality
 **Goal:** Move from Mocks to Real HDMI Input.
 - [ ] **HDMI Capture Integration:**
@@ -123,3 +133,4 @@ The Robot runs a continuous loop:
 2.  **Implement Teach Dialog:** Ensure user can effectively unblock the robot.
 3.  **Memory Injection:** Verify Ollama/Qdrant are correctly saving/retrieving instructions.
 4.  **Desktop Companion Exploration:** Define scope for Windows desktop app and start shell + screen capture.
+5.  **Desktop E2E Testing:** Run full end-to-end tests for the Windows desktop app (live screen, mock screens, task analysis, chat).

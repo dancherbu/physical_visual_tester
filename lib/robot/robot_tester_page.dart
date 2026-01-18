@@ -20,6 +20,8 @@ import 'training_model.dart';
 import 'offline_trainer.dart'; // [NEW]
 
 // HID
+import '../hid/hid_contract.dart';
+import '../hid/method_channel_hid_adapter.dart';
 
 class RobotTesterPage extends StatefulWidget {
   const RobotTesterPage({super.key});
@@ -34,6 +36,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   final _recognizer = TextRecognizer(script: TextRecognitionScript.latin);
   final ImagePicker _picker = ImagePicker();
   late RobotService _robot;
+  final HidAdapter _hid = MethodChannelHidAdapter();
 
   // AI Config
   static const _hostIp = String.fromEnvironment('HOST_IP', defaultValue: '192.168.1.100');
@@ -614,9 +617,11 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
        final file = await _controller!.takePicture();
        imagePath = file.path;
        imageBytes = await file.readAsBytes();
-       final decoded = await decodeImageFromList(imageBytes);
-       width = decoded.width;
-       height = decoded.height;
+       if (imageBytes != null) {
+          final decoded = await decodeImageFromList(imageBytes!);
+          width = decoded.width;
+          height = decoded.height;
+       }
      }
 
      if (imagePath == null) {
@@ -663,18 +668,9 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
      });
   }
 
-import '../hid/hid_contract.dart';
-import '../hid/method_channel_hid_adapter.dart';
-// ... previous imports ...
-
-// ... inside _RobotTesterPageState ...
-
   // Services
-  CameraController? _controller;
-  final _recognizer = TextRecognizer(script: TextRecognitionScript.latin);
-  final ImagePicker _picker = ImagePicker();
-  late RobotService _robot;
-  final HidAdapter _hid = MethodChannelHidAdapter(); // [NEW] HID Adapter
+   // ...
+
 
 // ...
 
