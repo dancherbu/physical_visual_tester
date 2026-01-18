@@ -83,10 +83,16 @@ class TaskStepVerification {
     final String stepDescription;
     final bool isKnown;
     final double confidence; // 0.0 to 1.0
+  final String? targetText;
+  final bool? contextVisible;
+  final String? note;
 
     TaskStepVerification({
         required this.stepDescription,
         required this.isKnown,
         required this.confidence,
+      this.targetText,
+      this.contextVisible,
+      this.note,
     });
 }

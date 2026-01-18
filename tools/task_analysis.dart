@@ -43,11 +43,15 @@ Future<void> main(List<String> args) async {
     for (final step in steps) {
       totalSteps++;
       final embedding = await embedder.embed(prompt: step);
-      final matches = await qdrant.search(queryEmbedding: embedding, limit: 1);
+      final matches = await qdrant.search(queryEmbedding: embedding, limit: 5);
 
       double score = 0.0;
+      Map<String, dynamic>? selected;
       if (matches.isNotEmpty) {
-        score = (matches.first['score'] as num).toDouble();
+        selected = await _rerankMatch(ollama, step, matches);
+        final picked = selected ?? matches.first;
+        score = (picked['score'] as num).toDouble();
+        selected = picked;
       }
 
       final isKnown = score >= threshold;
@@ -61,6 +65,7 @@ Future<void> main(List<String> args) async {
         'step': step,
         'confidence': score,
         'known': isKnown,
+        if (selected != null) 'match': selected['payload'],
       });
     }
 
@@ -105,6 +110,53 @@ Format as JSON List of strings. Example: ["Click Chrome", "Type Google.com", "Pr
   } catch (_) {}
 
   return [instruction];
+}
+
+Future<Map<String, dynamic>?> _rerankMatch(
+  OllamaClient ollama,
+  String step,
+  List<Map<String, dynamic>> matches,
+) async {
+  final candidates = <Map<String, dynamic>>[];
+  for (int i = 0; i < matches.length; i++) {
+    final m = matches[i];
+    final payload = m['payload'] as Map<String, dynamic>;
+    candidates.add({
+      'index': i,
+      'score': m['score'],
+      'goal': payload['goal'],
+      'action': payload['action'],
+      'fact': payload['fact'],
+      'prerequisites': payload['prerequisites'],
+    });
+  }
+
+  final prompt = '''
+You are matching a task step to the best memory entry.
+Step: "$step"
+Candidates (JSON): ${jsonEncode(candidates)}
+
+Return ONLY JSON:
+{"best_index": <index>, "confidence": <0.0-1.0>}
+''';
+
+  try {
+    final response = await ollama.generate(prompt: prompt, numPredict: 120);
+    final clean = _extractJson(response);
+    final decoded = jsonDecode(clean);
+    if (decoded is Map<String, dynamic>) {
+      final idx = (decoded['best_index'] as num?)?.toInt();
+      final confidence = (decoded['confidence'] as num?)?.toDouble();
+      if (idx != null && idx >= 0 && idx < matches.length) {
+        final selected = Map<String, dynamic>.from(matches[idx]);
+        if (confidence != null && confidence.isFinite) {
+          selected['score'] = confidence;
+        }
+        return selected;
+      }
+    }
+  } catch (_) {}
+  return null;
 }
 
 String _extractJson(String response) {

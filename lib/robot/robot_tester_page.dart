@@ -745,12 +745,49 @@ import '../hid/method_channel_hid_adapter.dart';
               _log("⚠️ HID: Shortcuts '$shortcut' not supported by current Android Adapter.");
               _log("👉 Please use Mouse interactions (Click Start) instead.");
               
-          } else if (type == 'mouse_right_click') {
-               // Similar move logic if we had x,y, or just click where we are?
-               // Usually for 'Context Menu' we might assume we move there first.
-               // For now, let's just click.
                await _hid.sendClick(HidMouseButton.right);
                _log("✅ Right Clicked.");
+               
+          } else if (type == 'system_command') {
+               // Mobile Robot cannot run background process on PC.
+               // Visual Fallback: Open Run Dialg -> Cmd -> Show output.
+               // Assuming user is on Desktop.
+               _log("⚙️ Mobile Fallback: Executing visually via Run Dialog...");
+               
+               final cmd = action['command'] as String;
+               final fullCmd = "powershell -NoExit -Command \"$cmd\"";
+               
+               // 1. Open Run (We don't have Win+R yet, so assume Start -> Run or search)
+               // Better: Just start typing? If we are on desktop it might search.
+               // Safe bet: "powershell" in search then command.
+               
+               // Actually, let's try to send Win+R if we can? No, modifier support missing.
+               // Fallback: Click Start if visible? No, we don't know where it is without 'x,y'.
+               
+               // Let's assume the user has a terminal open OR we just type blind? 
+               // No, that's dangerous.
+               
+               // COMPROMISE: We log it and ask user to run it? 
+               // OR: We type it blindly assuming focus is correct? 
+               
+               // THE USER REQUESTED: "even if it mean to... open terminal"
+               // So let's try to OPEN it. 
+               // Best generic way without Win key: 
+               // 1. Ctrl+Esc (Opens Start) - often supported as simple keys?
+               // 2. Type "powershell"
+               // 3. Enter
+               // 4. Type command
+               
+               // NOTE: We need to implement Ctrl+Esc or Win key support in HID Adapter first.
+               // For now, let's just Log and Type the command, assuming the user (or robot previous step) focused a terminal.
+               
+               _log("⚠️ I cannot run background commands remotely.");
+               _log("👉 Please open a Terminal, then I will type the command.");
+               await Future.delayed(const Duration(seconds: 3));
+               _log("⌨️ Typing Command...");
+               await _hid.sendKeyText(fullCmd);
+               await _hid.sendKeyText('\n');
+               _log("✅ Typed. Verify output on screen.");
           }
       } catch (e) {
           _log("❌ HID Error: $e");
@@ -1051,8 +1088,10 @@ import '../hid/method_channel_hid_adapter.dart';
        double totalSteps = 0;
        double knownSteps = 0;
        
-       for (final task in lines) {
-           final verification = await _robot.decomposeAndVerify(task);
+         final missingTargets = <String>{};
+
+         for (final task in lines) {
+           final verification = await _robot.decomposeAndVerify(task, state: _currentUiState);
            bool taskFullyKnown = true;
            
            for (final step in verification) {
@@ -1062,6 +1101,9 @@ import '../hid/method_channel_hid_adapter.dart';
                } else {
                    taskFullyKnown = false;
                }
+             if (step.contextVisible == false && step.targetText != null) {
+              missingTargets.add(step.targetText!);
+             }
            }
            
            if (!taskFullyKnown) {
@@ -1082,7 +1124,7 @@ import '../hid/method_channel_hid_adapter.dart';
            ));
        });
        
-       if (unknownTasks.isNotEmpty) {
+         if (unknownTasks.isNotEmpty) {
            _messages.add(ChatMessage(sender: 'Robot', text: "I need help with ${unknownTasks.length} tasks before we start. Let's clarify them."));
            // Queue them up for the existing review loop
            setState(() {
@@ -1097,12 +1139,19 @@ import '../hid/method_channel_hid_adapter.dart';
            // Let's just start the review.
            _nextFailureReviewStep();
            
-       } else {
+         } else {
            // All Good!
            _robot.loadTasks(rawText);
            _messages.add(ChatMessage(sender: 'Robot', text: "I am ready! Press 'START RUN' to begin execution."));
            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tasks Loaded & Verified!")));
        }
+
+         if (missingTargets.isNotEmpty) {
+           _messages.add(ChatMessage(
+             sender: 'Robot',
+             text: "I can’t see these on the current screen: ${missingTargets.join(', ')}. Please navigate there and retry.",
+           ));
+         }
   }
 
   void _handleUserChat(String text) async {
@@ -1118,7 +1167,7 @@ import '../hid/method_channel_hid_adapter.dart';
            setState(() => _messages.add(ChatMessage(sender: 'Robot', text: 'Analyzing instructions...', isLoading: true)));
            
            // 1. Decompose & Verify
-           final verification = await _robot.decomposeAndVerify(text);
+           final verification = await _robot.decomposeAndVerify(text, state: _currentUiState);
            
            // 2. Check if we know everything
            // We relax the threshold slightly for "Yellow" (partly known) to be acceptable if user insists, 
@@ -1138,7 +1187,7 @@ import '../hid/method_channel_hid_adapter.dart';
               ));
            });
            
-           if (isFullyCapable) {
+             if (isFullyCapable) {
                // 3. Save & Proceed
                if (_currentUiState != null) {
                   await _robot.learn(
@@ -1155,10 +1204,21 @@ import '../hid/method_channel_hid_adapter.dart';
                // 4. Ask for Clarification (Don't advance)
                // Identify unknown steps
                final unknowns = verification.where((s) => s.confidence <= 0.85).map((s) => s.stepDescription).toList();
+               final missingTargets = verification
+                 .where((s) => s.contextVisible == false && s.targetText != null)
+                 .map((s) => s.targetText!)
+                 .toSet()
+                 .toList();
                _messages.add(ChatMessage(
                    sender: 'Robot', 
-                   text: "I am not confident about: ${unknowns.join(', ')}. Please explain these steps in more detail or simplify."
+                 text: "I am not confident about: ${unknowns.join(', ')}. Please explain these steps in more detail or simplify."
                ));
+               if (missingTargets.isNotEmpty) {
+                 _messages.add(ChatMessage(
+                   sender: 'Robot',
+                   text: "Also, I can’t see: ${missingTargets.join(', ')} on the current screen. Please navigate there first.",
+                 ));
+               }
            }
 
            return;
@@ -1621,13 +1681,16 @@ import '../hid/method_channel_hid_adapter.dart';
                              color = Colors.red;
                          }
                          
+                         final description = step.note == null
+                             ? step.stepDescription
+                             : "${step.stepDescription} (${step.note})";
                          return Padding(
                            padding: const EdgeInsets.symmetric(vertical: 4.0),
                            child: Row(
                              children: [
                                 Icon(icon, color: color, size: 16),
                                 const SizedBox(width: 8),
-                                Expanded(child: Text(step.stepDescription, style: const TextStyle(fontSize: 12))),
+                                Expanded(child: Text(description, style: const TextStyle(fontSize: 12))),
                              ],
                            ),
                          );

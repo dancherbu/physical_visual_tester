@@ -586,8 +586,10 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     int total = 0;
     int known = 0;
 
+    final missingTargets = <String>{};
+
     for (final task in lines) {
-      final steps = await robot.decomposeAndVerify(task);
+      final steps = await robot.decomposeAndVerify(task, state: _currentUiState);
       bool taskKnown = true;
       for (final step in steps) {
         total++;
@@ -595,6 +597,9 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
           known++;
         } else {
           taskKnown = false;
+        }
+        if (step.contextVisible == false && step.targetText != null) {
+          missingTargets.add(step.targetText!);
         }
       }
       if (!taskKnown) unknownTasks.add(task);
@@ -615,6 +620,13 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
         ));
       }
     });
+
+    if (missingTargets.isNotEmpty) {
+      _messages.add(_DesktopChatMessage(
+        sender: 'Robot',
+        text: 'I can’t see these on the current screen: ${missingTargets.join(', ')}. Please navigate to the right screen and try again.',
+      ));
+    }
 
     if (loadAfter && unknownTasks.isEmpty) {
       robot.loadTasks(rawText);
@@ -770,6 +782,27 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
              }
              await hid.sendClick(HidMouseButton.right);
              _log("✅ Right Clicked.");
+             
+        } else if (type == 'system_command') {
+             // Statistical/Background Query
+             final cmd = action['command'] as String;
+             _log("⚙️ Executing Background Command: $cmd");
+             
+             // Run Powershell command
+             final result = await Process.run('powershell', ['-Command', cmd]);
+             
+             if (result.exitCode == 0) {
+                 final output = result.stdout.toString().trim();
+                 _log("✅ Output: $output");
+                 
+                 // Feed back to Chat
+                 setState(() {
+                    _messages.add(_DesktopChatMessage(sender: 'System', text: "Result: $output"));
+                 });
+             } else {
+                 final error = result.stderr.toString().trim();
+                 _log("❌ Command Failed: $error");
+             }
         }
     } catch (e) {
         _log("❌ Execution Failed: $e");

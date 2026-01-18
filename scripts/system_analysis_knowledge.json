@@ -1,0 +1,60 @@
+[
+    {
+        "description": "System Analysis - Disk Usage",
+        "prerequisites": [],
+        "actions": [
+            {
+                "goal": "Check Disk Space",
+                "action": {
+                    "type": "system_command",
+                    "command": "Get-Volume -DriveLetter C | Select-Object SizeRemaining, Size | Format-List"
+                },
+                "fact": "Returns disk space remaining."
+            }
+        ]
+    },
+    {
+        "description": "System Analysis - File Counting",
+        "prerequisites": [],
+        "actions": [
+            {
+                "goal": "Count files in Documents",
+                "action": {
+                    "type": "system_command",
+                    "command": "(Get-ChildItem $HOME\\Documents -File).Count"
+                },
+                "fact": "Returns the number of files in the Documents folder."
+            },
+            {
+                "goal": "Count folders in Home",
+                "action": {
+                    "type": "system_command",
+                    "command": "(Get-ChildItem $HOME -Directory).Count"
+                },
+                "fact": "Returns the number of subdirectories in the user home directory."
+            },
+            {
+                "goal": "List files in Downloads",
+                "action": {
+                    "type": "system_command",
+                    "command": "Get-ChildItem $HOME\\Downloads -Name | Select-Object -First 10"
+                },
+                "fact": "Lists the first 10 files in Downloads."
+            }
+        ]
+    },
+    {
+        "description": "Network Analysis",
+        "prerequisites": [],
+        "actions": [
+            {
+                "goal": "Check IP Address",
+                "action": {
+                    "type": "system_command",
+                    "command": "(Get-NetIPAddress -AddressFamily IPv4).IPAddress"
+                },
+                "fact": "Returns local IPv4 addresses."
+            }
+        ]
+    }
+]

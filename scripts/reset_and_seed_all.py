@@ -15,7 +15,8 @@ SCRIPTS_TO_RUN = [
     "seed_file_explorer.py",
     "seed_text_editor.py",
     "seed_browser_knowledge.py",
-    "seed_shortcuts.py"
+    "seed_shortcuts.py",
+    "seed_system_analysis.py"
 ]
 
 def delete_collection():

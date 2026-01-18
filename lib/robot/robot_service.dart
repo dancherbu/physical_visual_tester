@@ -220,7 +220,10 @@ class RobotService {
   }
   
   // Verifys if we know how to do a user's instruction
-  Future<List<TaskStepVerification>> decomposeAndVerify(String userInstruction) async {
+    Future<List<TaskStepVerification>> decomposeAndVerify(
+        String userInstruction, {
+        UIState? state,
+    }) async {
        // 1. Decompose
        final prompt = '''
        Break down this instruction into atomic UI actions (click, type, open).
@@ -245,25 +248,101 @@ class RobotService {
        
        for (final step in steps) {
            final embedding = await ollamaEmbed.embed(prompt: step);
-           final memories = await qdrant.search(queryEmbedding: embedding, limit: 1);
+           final memories = await qdrant.search(queryEmbedding: embedding, limit: 5);
            
            bool known = false;
            double conf = 0.0;
+           String? targetText;
+           bool? contextVisible;
+           String? note;
            
            if (memories.isNotEmpty) {
-               conf = memories.first['score'] as double;
+               final rerank = await _rerankStepMatch(step: step, memories: memories);
+               final selected = rerank ?? memories.first;
+               conf = (selected['score'] as num).toDouble();
+               
+               final payload = selected['payload'] as Map<String, dynamic>;
+               if (payload.containsKey('action')) {
+                   final action = payload['action'] as Map<String, dynamic>;
+                   if (action.containsKey('target_text')) {
+                       targetText = action['target_text']?.toString();
+                   }
+               }
+
                // Lower threshold for "knowing" a concept vs acting
-               if (conf > 0.85) known = true; 
+               if (conf >= 0.85) known = true;
+               
+               if (state != null && targetText != null) {
+                   final targetLower = targetText!.toLowerCase();
+                   final visible = state.ocrBlocks.any((b) => b.text.toLowerCase().contains(targetLower));
+                   contextVisible = visible;
+                   if (!visible) {
+                       note = "Not visible on current screen";
+                       known = false; // Block action if target not visible
+                   }
+               }
            }
            
            results.add(TaskStepVerification(
                stepDescription: step, 
                isKnown: known, 
-               confidence: conf
+               confidence: conf,
+               targetText: targetText,
+               contextVisible: contextVisible,
+               note: note,
            ));
        }
        
        return results;
+  }
+
+  Future<Map<String, dynamic>?> _rerankStepMatch({
+      required String step,
+      required List<Map<String, dynamic>> memories,
+  }) async {
+      if (memories.isEmpty) return null;
+
+      final candidates = <Map<String, dynamic>>[];
+      for (int i = 0; i < memories.length; i++) {
+          final m = memories[i];
+          final payload = m['payload'] as Map<String, dynamic>;
+          candidates.add({
+              'index': i,
+              'score': m['score'],
+              'goal': payload['goal'],
+              'action': payload['action'],
+              'fact': payload['fact'],
+              'prerequisites': payload['prerequisites'],
+          });
+      }
+
+      final prompt = '''
+      You are matching a task step to the best memory entry.
+      Step: "$step"
+      Candidates (JSON): ${jsonEncode(candidates)}
+
+      Return ONLY JSON:
+      {"best_index": <index>, "confidence": <0.0-1.0>, "reason": "short"}
+      ''';
+
+      try {
+          final response = await ollama.generate(prompt: prompt, numPredict: 120);
+          final clean = _extractJson(response);
+          final decoded = jsonDecode(clean);
+          if (decoded is Map<String, dynamic>) {
+              final idx = (decoded['best_index'] as num?)?.toInt();
+              final confidence = (decoded['confidence'] as num?)?.toDouble();
+              if (idx != null && idx >= 0 && idx < memories.length) {
+                  final selected = Map<String, dynamic>.from(memories[idx]);
+                  if (confidence != null && confidence.isFinite) {
+                      selected['score'] = confidence;
+                  }
+                  return selected;
+              }
+          }
+      } catch (_) {}
+
+      return null;
   }
   
   // --- CONVERSATIONAL METHODS ---
