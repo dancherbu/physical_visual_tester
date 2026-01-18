@@ -86,6 +86,16 @@ class OllamaClient {
     return embedding;
   }
 
+  Future<bool> ping() async {
+    try {
+      final url = baseUrl.resolve('/');
+      final response = await _http.get(url).timeout(const Duration(seconds: 2));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void close() {
     _http.close();
   }

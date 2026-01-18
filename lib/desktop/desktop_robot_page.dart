@@ -51,7 +51,9 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
   bool _idleEnabled = true;
   bool _awaitingUserResponse = false;
   String? _lastRobotQuestion;
+
   final Set<String> _answeredQuestions = {};
+  final List<String> _pendingGoalQuestions = []; // [NEW] Queue for sequential questioning
 
   bool _connecting = false;
   bool _connected = false;
@@ -59,7 +61,10 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
   bool _isCapturing = false;
   bool _isOcrRunning = false;
   bool _isTaskAnalyzing = false;
+
   bool _isRobotRunning = false; // [NEW] Active Mode
+  bool _showTaskList = true;
+  final ScrollController _chatScroll = ScrollController();
 
   @override
   void initState() {
@@ -110,7 +115,28 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
       });
     } catch (e) {
       _log('❌ Asset manifest load failed: $e');
+      // Fallback for Desktop if manifest fails
+      _mockAssets.addAll([
+         'assets/mock/screen_login.png',
+         'assets/mock/my_windows11_desktop.png',
+         'assets/mock/file_explorer_window.png',
+         'assets/mock/laptop_screen.png'
+      ]);
+      _taskAssets.add('assets/tasks/login_tasks.txt');
     }
+  }
+
+  // Connection Checker
+  Future<void> _checkHealth() async {
+      if (_robot == null) return;
+      try {
+          final health = await _robot!.checkHealth();
+           setState(() {
+              _connected = (health['ollama'] == true) && (health['qdrant'] == true);
+           });
+      } catch (_) {
+          setState(() => _connected = false);
+      }
   }
 
   Future<void> _connectRobot() async {
@@ -145,6 +171,8 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
             _log('📂 Indexing Documents in background...');
             FileSystemIndexer.indexRoots(['$home\\Documents']).then((_) {
                _log('✅ Documents Indexing Completed.'); 
+            }).catchError((e) {
+               _log('⚠️ Indexing skipped (DB Locked/Error).');
             });
         } else {
             _log('⚠️ Native Input not supported on ${Platform.operatingSystem}');
@@ -285,8 +313,10 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
 
     try {
       final path = await _prepareImageForOcr();
+
       if (path == null) {
-        _log('⚠️ No capture available for OCR.');
+        // [FIX] Suppress log if just idle checking, or log once?
+        // _log('⚠️ No capture available for OCR.');
         return;
       }
 
@@ -365,13 +395,17 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
             .toList();
 
         if (newQuestions.isNotEmpty) {
-          setState(() {
-            for (final message in newQuestions) {
-              _messages.add(_DesktopChatMessage(sender: 'Robot', text: message));
-              _lastRobotQuestion = message;
-            }
-            _awaitingUserResponse = true;
-          });
+           // Queue them instead of showing all at once
+           setState(() {
+              for (final q in newQuestions) {
+                  if (!_pendingGoalQuestions.contains(q)) {
+                      _pendingGoalQuestions.add(q);
+                  }
+              }
+           });
+           
+           // Trigger processing
+           _processNextQuestion();
         }
       }
       if (result.learnedItems.isNotEmpty) {
@@ -380,6 +414,18 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     } finally {
       if (mounted) setState(() => _isIdleAnalyzing = false);
     }
+  }
+
+  void _processNextQuestion() {
+      if (_awaitingUserResponse || _pendingGoalQuestions.isEmpty) return;
+      
+      final nextQ = _pendingGoalQuestions.removeAt(0);
+      _lastRobotQuestion = nextQ;
+      
+      setState(() {
+          _messages.add(_DesktopChatMessage(sender: 'Robot', text: nextQ));
+          _awaitingUserResponse = true;
+      });
   }
 
   Future<void> _sendChat() async {
@@ -408,6 +454,12 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     try {
       final reply = await robot.answerQuestion(text);
       _replaceLastMessage('Robot', reply);
+      
+      // Delay to let user read, then ask next question if any
+      Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) _processNextQuestion();
+      });
+
     } catch (e) {
       _replaceLastMessage('Robot', 'I ran into an error: $e');
     }
@@ -852,15 +904,17 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                 isExpanded: true,
                 hint: const Text('Select Mock Screen'),
                 value: _currentMockAsset,
-                items: _mockAssets
-                    .map(
-                      (asset) => DropdownMenuItem(
-                        value: asset,
-                        child: Text(asset.split('/').last),
-                      ),
-                    )
-                    .toList(),
-                onChanged: _useLiveScreen
+                items: _mockAssets.isEmpty 
+                    ? const [DropdownMenuItem(value: null, enabled: false, child: Text("No mocks found"))]
+                    : _mockAssets
+                        .map(
+                          (asset) => DropdownMenuItem(
+                            value: asset,
+                            child: Text(asset.split('/').last),
+                          ),
+                        )
+                        .toList(),
+                onChanged: _useLiveScreen || _mockAssets.isEmpty
                     ? null
                     : (val) async {
                         setState(() => _currentMockAsset = val);
@@ -871,20 +925,19 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
               ),
             ),
             const SizedBox(width: 8),
-            ElevatedButton.icon(
+            // Button takes less space, dropdown takes more
+            ElevatedButton(
               onPressed: _useLiveScreen
                   ? null
                   : (_currentMockAsset == null
                       ? null
                       : () => _log('🖼️ Mock screen loaded.')),
-              icon: const Icon(Icons.image),
-              label: const Text('Use Mock'),
+              child: const Text('Use Mock'),
             ),
             const SizedBox(width: 8),
-            ElevatedButton.icon(
+            ElevatedButton(
               onPressed: _showMockManagerDialog,
-              icon: const Icon(Icons.folder_open),
-              label: const Text('Load Screen'),
+              child: const Icon(Icons.folder_open), // Compact
             ),
           ],
         ),
@@ -979,13 +1032,15 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
           child: ListView.builder(
             reverse: true,
             itemCount: _statusLog.length,
-            itemBuilder: (ctx, i) => Text(
-              _statusLog[i],
-              style: const TextStyle(
-                color: Colors.greenAccent,
-                fontFamily: 'Courier',
-                fontSize: 11,
-              ),
+            itemBuilder: (ctx, i) => SelectionArea(
+                child: Text(
+                  _statusLog[i],
+                  style: const TextStyle(
+                    color: Colors.greenAccent,
+                    fontFamily: 'Courier',
+                    fontSize: 11,
+                  ),
+                ),
             ),
           ),
         ),
@@ -993,40 +1048,60 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     );
   }
 
+
+
+  void _showSettingsDialog() {
+      showDialog(
+          context: context,
+          builder: (ctx) => StatefulBuilder(
+              builder: (context, setDialogState) {
+                  return AlertDialog(
+                      title: const Text("Connection Settings"),
+                      content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                             TextField(
+                                controller: _ollamaController,
+                                decoration: const InputDecoration(labelText: 'Ollama URL'),
+                             ),
+                             const SizedBox(height: 10),
+                             TextField(
+                                controller: _qdrantController,
+                                decoration: const InputDecoration(labelText: 'Qdrant URL'),
+                             ),
+                             const SizedBox(height: 10),
+                             // Use standard connection logic, but we might need to expose _connecting state or similar if we want feedback here
+                             ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: _connected ? Colors.green : (_connecting ? Colors.orange : Colors.red),
+                                    foregroundColor: Colors.white, 
+                                ),
+                                onPressed: _connecting ? null : () {
+                                    _connectRobot(); 
+                                    // Close dialog after attempt? Or let user see status change (if we used real reactive state in dialog)
+                                    // Since _connectRobot uses setState on the main widget, this StatefulBuilder won't rebuild automatically unless connected
+                                    // For now, allow trigger.
+                                    Navigator.pop(ctx);
+                                },
+                                icon: Icon(_connected ? Icons.check_circle : Icons.link),
+                                label: Text(_connecting ? 'Connecting...' : (_connected ? 'Connected' : 'Connect')),
+                             )
+                          ],
+                      ),
+                      actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Close")),
+                      ],
+                  );
+              }
+          )
+      );
+  }
+
   Widget _buildRightPanel() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _ollamaController,
-                decoration: const InputDecoration(
-                  labelText: 'Ollama URL',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                controller: _qdrantController,
-                decoration: const InputDecoration(
-                  labelText: 'Qdrant URL',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: _connecting ? null : _connectRobot,
-              icon: Icon(_connected ? Icons.check_circle : Icons.link),
-              label: Text(_connecting ? 'Connecting...' : 'Connect'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
+        // Connection & URLs moved to Settings Dialog
         Expanded(
           child: Container(
             padding: const EdgeInsets.all(8),
@@ -1035,6 +1110,7 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: ListView.builder(
+              controller: _chatScroll,
               reverse: true,
               itemCount: _messages.length,
               itemBuilder: (ctx, i) {
@@ -1057,42 +1133,42 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : Text(msg.text),
+                        : SelectionArea(child: Text(msg.text)),
                   ),
                 );
               },
             ),
           ),
         ),
-        const SizedBox(height: 8),
-        if (_lastOcrText != null && _lastOcrText!.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.black12),
-            ),
-            child: Text(
-              _lastOcrText!,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12),
-            ),
-          ),
-        const SizedBox(height: 8),
+
+        // Removed OCR text display (New Y @ Daniel...)
+        
         Row(
           children: [
             Expanded(
-              child: TextField(
-                controller: _chatController,
-                minLines: 1,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                  hintText: 'Ask the robot a question...',
-                  border: OutlineInputBorder(),
+              child: CallbackShortcuts(
+                bindings: {
+                    const SingleActivator(LogicalKeyboardKey.enter): _sendChat,
+                    const SingleActivator(LogicalKeyboardKey.enter, control: true): () {
+                         final text = _chatController.text;
+                         final sel = _chatController.selection;
+                         final newText = text.replaceRange(sel.start, sel.end, '\n');
+                         _chatController.value = TextEditingValue(
+                            text: newText,
+                            selection: TextSelection.collapsed(offset: sel.start + 1),
+                         );
+                    }
+                },
+                child: TextField(
+                  controller: _chatController,
+                  minLines: 1,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    hintText: 'Ask the robot a question (Enter to Send, Ctrl+Enter for Newline)...',
+                    border: OutlineInputBorder(),
+                  ),
+                  // onSubmitted: (_) => _sendChat(), // Removed to avoid conflict with Shortcut
                 ),
-                onSubmitted: (_) => _sendChat(),
               ),
             ),
             const SizedBox(width: 8),
@@ -1103,58 +1179,65 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        const Text('Task List', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: DropdownButton<String>(
-                isExpanded: true,
-                hint: const Text('Load task asset'),
-                items: _taskAssets
-                    .map(
-                      (asset) => DropdownMenuItem(
-                        value: asset,
-                        child: Text(asset.split('/').last.replaceAll('.txt', '')),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (val) {
-                  if (val != null) _loadTaskAsset(val);
-                },
-              ),
+        if (_showTaskList) ...[
+            const SizedBox(height: 12),
+            const Text('Task List', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    hint: const Text('Load task asset'),
+                    items: _taskAssets.isEmpty 
+                        ? const [DropdownMenuItem(value: null, enabled: false, child: Text("No tasks found"))]
+                        : _taskAssets
+                            .map(
+                              (asset) => DropdownMenuItem(
+                                value: asset,
+                                child: Text(asset.split('/').last.replaceAll('.txt', '')),
+                              ),
+                            )
+                            .toList(),
+                    onChanged: _taskAssets.isEmpty ? null : (val) {
+                      if (val != null) _loadTaskAsset(val);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _isTaskAnalyzing ? null : _analyzeAndLoadTasks,
+                  child: const Text('Load'), // Compact
+                ),
+                const SizedBox(width: 8),
+                // Moved other buttons to Overflow or condense
+                PopupMenuButton<String>(
+                   icon: const Icon(Icons.more_vert),
+                   onSelected: (v) {
+                       if (v == 'file') _loadTaskFileFromDisk();
+                       if (v == 'script') _runScriptedTaskTest();
+                   },
+                   itemBuilder: (context) => [
+                       const PopupMenuItem(value: 'file', child: Text("Open File")),
+                       const PopupMenuItem(value: 'script', child: Text("Scripted Test")),
+                   ]
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: _isTaskAnalyzing ? null : _analyzeAndLoadTasks,
-              icon: const Icon(Icons.assignment_turned_in),
-              label: const Text('Analyze & Load'),
+            const SizedBox(height: 8),
+            Container(
+               height: 120, // Limit height
+               child: TextField(
+                  controller: _taskController,
+                  expands: true,
+                  maxLines: null,
+                  decoration: const InputDecoration(
+                    hintText: '1. Open Chrome\n2. Go to google.com',
+                    border: OutlineInputBorder(),
+                  ),
+               )
             ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: _loadTaskFileFromDisk,
-              icon: const Icon(Icons.folder_open),
-              label: const Text('Open File'),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: _isTaskAnalyzing ? null : _runScriptedTaskTest,
-              icon: const Icon(Icons.science),
-              label: const Text('Scripted Test'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _taskController,
-          minLines: 3,
-          maxLines: 6,
-          decoration: const InputDecoration(
-            hintText: '1. Open Chrome\n2. Go to google.com',
-            border: OutlineInputBorder(),
-          ),
-        ),
+        ]
       ],
     );
   }
@@ -1164,6 +1247,20 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('PVT Desktop Companion'),
+        actions: [
+            IconButton(
+                icon: const Icon(Icons.list),
+                tooltip: "Toggle Task List",
+                onPressed: () {
+                    setState(() => _showTaskList = !_showTaskList);
+                },
+            ),
+            IconButton(
+                icon: const Icon(Icons.settings),
+                tooltip: "Settings",
+                onPressed: _showSettingsDialog,
+            )
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(12.0),

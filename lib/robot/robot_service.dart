@@ -43,6 +43,15 @@ class RobotService {
   final OllamaClient ollamaEmbed; // [NEW]
   final QdrantService qdrant;
   
+  Future<Map<String, bool>> checkHealth() async {
+    final ollamaOk = await ollama.ping();
+    final qdrantOk = await qdrant.ping();
+    return {
+      'ollama': ollamaOk,
+      'qdrant': qdrantOk,
+    };
+  }
+  
   // Training Section
   TrainingSession? _currentSession;
   UIState? _lastRecordedState;

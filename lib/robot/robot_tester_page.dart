@@ -88,6 +88,10 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   bool _isAnalyzingIdle = false;
   final List<String> _pendingCuriosityQuestions = [];
 
+  // Connection Status
+  String _connectionStatus = 'init'; // init, connected, partial, disconnected
+  Timer? _connTimer;
+
   @override
   void initState() {
     super.initState();
@@ -99,7 +103,35 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
       await _initMocks();
       await _initCamera();
       _startIdleLoop();
+      _startConnectionHealthCheck(); // [NEW]
       _log("✅ System Ready.");
+  }
+
+  void _startConnectionHealthCheck() {
+      // Periodic check every 10s
+      _checkHealth(); // Immediate
+      _connTimer = Timer.periodic(const Duration(seconds: 10), (_) => _checkHealth());
+  }
+
+  Future<void> _checkHealth() async {
+      // If init, keep it so it flashes? No, update ASAP.
+      if (!_isInit) return;
+      
+      try {
+          final health = await _robot.checkHealth();
+          final oOptions = health['ollama'] ?? false;
+          final qOptions = health['qdrant'] ?? false;
+          
+          if (mounted) {
+              setState(() {
+                  if (oOptions && qOptions) _connectionStatus = 'connected';
+                  else if (oOptions || qOptions) _connectionStatus = 'partial';
+                  else _connectionStatus = 'disconnected';
+              });
+          }
+      } catch (e) {
+          if (mounted) setState(() => _connectionStatus = 'disconnected');
+      }
   }
 
   final ScrollController _logScrollController = ScrollController(); // [NEW]
@@ -227,6 +259,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
     _controller?.dispose();
     _recognizer.close();
     _idleTimer?.cancel();
+    _connTimer?.cancel(); // [NEW]
     _chatController.dispose();
     super.dispose();
   }
@@ -246,15 +279,18 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
           
           // 1. Curiosity Analysis (>10s)
           if (idleDuration.inSeconds > 10 && !_isAnalyzingIdle) {
-               if (_currentUiState != null) {
-                    _log("⏰ Idle Curiosity: Analyzing ${_useMock ? 'Mock Screen' : 'Screen'}...");
-                    await _runIdleAnalysis();
-                    
-                    // Mark as studied if mock
-                    if (_useMock && _currentMockAsset != null) {
-                        _studiedMocks.add(_currentMockAsset!);
-                    }
-               }
+                if (_currentUiState != null) {
+                     // Check if valid state
+                     if (!_useMock && (_controller == null || !_controller!.value.isInitialized)) return;
+
+                     _log("⏰ Idle Curiosity: Analyzing ${_useMock ? 'Mock Screen' : 'Screen'}...");
+                     await _runIdleAnalysis();
+                     
+                     // Mark as studied if mock
+                     if (_useMock && _currentMockAsset != null) {
+                         _studiedMocks.add(_currentMockAsset!);
+                     }
+                }
           }
           
           // 2. Memory Optimization (>30s)
@@ -994,12 +1030,14 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                     DropdownButton<String>(
                         isExpanded: true,
                         hint: const Text("Select a Task File..."),
-                        items: _taskAssets.map((path) {
-                            // Extract readable name
-                            final name = path.split('/').last.replaceAll('.txt', '').replaceAll('_', ' ').toUpperCase();
-                            return DropdownMenuItem(value: path, child: Text(name, style: const TextStyle(fontSize: 14)));
-                        }).toList(),
-                        onChanged: (val) async {
+                        items: _taskAssets.isEmpty
+                            ? const [DropdownMenuItem(value: null, enabled: false, child: Text("No tasks found"))]
+                            : _taskAssets.map((path) {
+                                // Extract readable name
+                                final name = path.split('/').last.replaceAll('.txt', '').replaceAll('_', ' ').toUpperCase();
+                                return DropdownMenuItem(value: path, child: Text(name, style: const TextStyle(fontSize: 14)));
+                            }).toList(),
+                        onChanged: _taskAssets.isEmpty ? null : (val) async {
                             if (val != null) {
                                 try {
                                   final content = await rootBundle.loadString(val);
@@ -1058,14 +1096,20 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
             ),
             actions: [
                 TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
-                ElevatedButton(
-                    onPressed: () {
-                         if(textController.text.isNotEmpty) {
-                             Navigator.pop(ctx);
-                             _analyzeTaskList(textController.text);
-                         }
-                    }, 
-                    child: const Text("Analyze & Load")
+                // Disable if empty
+                ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: textController,
+                    builder: (context, value, child) {
+                        return ElevatedButton(
+                            onPressed: value.text.isNotEmpty 
+                                ? () {
+                                     Navigator.pop(ctx);
+                                     _analyzeTaskList(textController.text);
+                                } 
+                                : null, // Disabled
+                            child: const Text("Analyze & Load")
+                        );
+                    }
                 ),
             ],
            ),
@@ -1311,7 +1355,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
       child: SingleChildScrollView(
         controller: _logScrollController, // [NEW] Loop auto-scroll
         // reverse: true, // [FIX] Newest is at top of string, so we want to start at top (offset 0)
-        child: Text(
+        child: SelectableText(
           _statusLog,
           style: const TextStyle(color: Colors.greenAccent, fontFamily: 'Courier', fontSize: 12),
         ),
@@ -1337,8 +1381,10 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                        isExpanded: true,
                        value: selectedAsset,
                        hint: const Text("Select Asset..."),
-                       items: _mockAssets.map((m) => DropdownMenuItem(value: m, child: Text(m.split('/').last, overflow: TextOverflow.ellipsis))).toList(),
-                       onChanged: (val) {
+                       items: _mockAssets.isEmpty 
+                           ? const [DropdownMenuItem(value: null, enabled: false, child: Text("No mocks found"))]
+                           : _mockAssets.map((m) => DropdownMenuItem(value: m, child: Text(m.split('/').last, overflow: TextOverflow.ellipsis))).toList(),
+                       onChanged: _mockAssets.isEmpty ? null : (val) {
                            if (val != null) {
                                setDialogState(() {
                                    selectedAsset = val;
@@ -1419,6 +1465,44 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
        )));
   }
 
+
+
+  // Helper for Connection Icon
+  Widget _buildConnectionIcon() {
+    Color color;
+    bool isFlashing = false;
+
+    if (!_isInit || _connectionStatus == 'init') {
+       color = Colors.red;
+       isFlashing = true; 
+    } else if (_connectionStatus == 'connected') {
+       color = Colors.green;
+    } else if (_connectionStatus == 'partial') {
+       color = Colors.yellow;
+    } else {
+       color = Colors.red;
+    }
+    
+    Widget icon = Icon(Icons.circle, color: color, size: 16);
+    
+    if (isFlashing) {
+        return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.2, end: 1.0),
+            duration: const Duration(milliseconds: 500),
+            builder: (context, value, child) {
+                return Opacity(opacity: value, child: child);
+            },
+            onEnd: () {}, // Trigger rebuild? Simplified for now.
+            child: icon,
+        );
+    }
+    
+    return Tooltip(
+        message: "System Connectivity: ${_connectionStatus.toUpperCase()}",
+        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8.0), child: icon),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_isInit) return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -1429,6 +1513,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
       appBar: AppBar(
         title: const Text('🤖 Robot Tester', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+           _buildConnectionIcon(), // [NEW]
            if (_isAnalyzingIdle)
                const Padding(
                  padding: EdgeInsets.all(8.0),
@@ -1563,33 +1648,51 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                              },
                            ),
                          ),
-                         Padding(
+                          Padding(
                            padding: const EdgeInsets.all(8.0),
-                           child: TextField(
-                             controller: _chatController,
-                             minLines: 1,
-                             maxLines: 5, // [NEW] Multi-line support
-                             decoration: InputDecoration(
-                               hintText: _reviewSession != null ? "Verify Hypothesis..." : "Type reply...",
-                               suffixIcon: IconButton(
-                                 icon: const Icon(Icons.send),
-                                 onPressed: () {
-                                   final text = _chatController.text.trim();
-                                   if (text.isNotEmpty) {
-                                     _handleUserChat(text);
-                                     _chatController.clear();
-                                   }
-                                 },
-                               ),
-                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                             ),
-                             // onSubmitted doesn't fire for multiline with Enter usually, but we keep it for physical keyboards execution if supported
-                             onSubmitted: (val) {
-                                if (val.isNotEmpty) {
-                                  _handleUserChat(val);
-                                  _chatController.clear();
-                                }
+                           child: CallbackShortcuts(
+                             bindings: {
+                               const SingleActivator(LogicalKeyboardKey.enter): () {
+                                  // Send
+                                  final text = _chatController.text.trim();
+                                  if (text.isNotEmpty) {
+                                      _handleUserChat(text);
+                                      _chatController.clear();
+                                  }
+                               },
+                               const SingleActivator(LogicalKeyboardKey.enter, control: true): () {
+                                  // Insert Newline
+                                  final text = _chatController.text;
+                                  final sel = _chatController.selection;
+                                  final newText = text.replaceRange(sel.start, sel.end, '\n');
+                                  _chatController.value = TextEditingValue(
+                                      text: newText,
+                                      selection: TextSelection.collapsed(offset: sel.start + 1),
+                                  );
+                               },
                              },
+                             child: TextField(
+                               controller: _chatController,
+                               focusNode: FocusNode(), // Needed for Shortcuts?
+                               minLines: 1,
+                               maxLines: 5, 
+                               decoration: InputDecoration(
+                                 hintText: _reviewSession != null ? "Verify Hypothesis..." : "Type reply...",
+                                 hintStyle: TextStyle(fontSize: 12),
+                                 isDense: true,
+                                 suffixIcon: IconButton(
+                                   icon: const Icon(Icons.send),
+                                   onPressed: () {
+                                     final text = _chatController.text.trim();
+                                     if (text.isNotEmpty) {
+                                       _handleUserChat(text);
+                                       _chatController.clear();
+                                     }
+                                   },
+                                 ),
+                                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+                               ),
+                             ),
                            ),
                          ),
                       ],
@@ -1656,7 +1759,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                    const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                 else ...[
                    if (msg.reasoning != null) ThinkingSection(content: msg.reasoning!),
-                   Text(msg.text),
+                   SelectableText(msg.text),
                 ],
                   
                if (msg.verificationSteps != null)
