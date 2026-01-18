@@ -1,15 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
+
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image_picker/image_picker.dart';
 
-import '../vision/input_image_from_camera_image.dart';
+
 import '../vision/ocr_models.dart';
 import '../vision/vision_overlay_painter.dart';
 import '../spikes/brain/ollama_client.dart';
@@ -18,8 +19,7 @@ import 'robot_service.dart';
 import 'training_model.dart';
 
 // HID
-import '../hid/hid_contract.dart';
-import '../hid/method_channel_hid_adapter.dart';
+
 
 class RobotTesterPage extends StatefulWidget {
   const RobotTesterPage({super.key});
@@ -32,14 +32,14 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   // Services
   CameraController? _controller;
   final _recognizer = TextRecognizer(script: TextRecognitionScript.latin);
-  final HidAdapter _hid = MethodChannelHidAdapter();
+  final ImagePicker _picker = ImagePicker();
   late RobotService _robot;
 
   // AI Config
   static const _hostIp = String.fromEnvironment('HOST_IP', defaultValue: '192.168.1.100');
-  String _ollamaUrl = 'http://$_hostIp:11434';
-  String _qdrantUrl = 'http://$_hostIp:6333';
-  String _ollamaModel = 'nomic-embed-text';
+  final String _ollamaUrl = 'http://$_hostIp:11434';
+  final String _qdrantUrl = 'http://$_hostIp:6333';
+  final String _ollamaModel = 'nomic-embed-text';
 
   // State
   bool _isInit = false;
@@ -61,6 +61,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   bool _useMock = true; // Default to Mock Mode
   List<String> _mockAssets = [];
   final Set<String> _studiedMocks = {}; // [NEW] Track studied screens
+  Set<String> _knownTexts = {}; // [NEW] Tracks elements known to Qdrant
   String? _currentMockAsset;
   int _imageWidth = 0;
   int _imageHeight = 0;
@@ -82,16 +83,23 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   Timer? _idleTimer;
   DateTime _lastInteractionTime = DateTime.now();
   bool _isAnalyzingIdle = false;
-  List<String> _pendingCuriosityQuestions = [];
+  final List<String> _pendingCuriosityQuestions = [];
 
   @override
   void initState() {
     super.initState();
-    _initRobot();
-    _initMocks();
-    _initCamera();
-    _startIdleLoop();
+    _bootstrap(); // Run sequential init
   }
+
+  Future<void> _bootstrap() async {
+      await _initRobot();
+      await _initMocks();
+      await _initCamera();
+      _startIdleLoop();
+      _log("✅ System Ready.");
+  }
+
+  final ScrollController _logScrollController = ScrollController(); // [NEW]
 
   void _log(String message) {
     if (!mounted) return;
@@ -100,14 +108,30 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
       if (_statusLog.length > 2000) _statusLog = _statusLog.substring(0, 2000);
     });
     debugPrint("[ROBOT] $message");
+    
+    // Auto-scroll to top to see newest message
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_logScrollController.hasClients) {
+        _logScrollController.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<void> _initRobot() async {
+    // [FIX] Using Llama 3.2 (Text Only) for robustness on Android
+    final chatClient = OllamaClient(baseUrl: Uri.parse(_ollamaUrl), model: 'llama3.2:3b');
+    final embedClient = OllamaClient(baseUrl: Uri.parse(_ollamaUrl), model: _ollamaModel); // nomic-embed-text
+
     _robot = RobotService(
-      ollama: OllamaClient(baseUrl: Uri.parse(_ollamaUrl), model: _ollamaModel),
+      ollama: chatClient,
+      ollamaEmbed: embedClient, // [NEW] Explicit embed client
       qdrant: QdrantService(baseUrl: Uri.parse(_qdrantUrl), collectionName: 'pvt_memory'),
     );
-    _log("Robot Brain Connected.");
+    _log("Robot Brain Connected (Chat: ${chatClient.model}, Embed: $_ollamaModel).");
     setState(() => _isInit = true);
   }
 
@@ -116,22 +140,52 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
 
   Future<void> _initMocks() async {
     try {
-       final manifestContent = await rootBundle.loadString('AssetManifest.json');
-       final Map<String, dynamic> manifestMap = json.decode(manifestContent);
+     String manifestContent;
+     try {
+       manifestContent = await rootBundle.loadString('AssetManifest.json');
+     } catch (e) {
+        _log("⚠️ JSON Manifest failed.");
+        throw e;
+     }
+
+     final Map<String, dynamic> manifestMap = json.decode(manifestContent);
        
+       // Debug Manifest
+       _log("📂 content: ${manifestMap.keys.length} keys found.");
+       int count = 0;
+       for(final key in manifestMap.keys) {
+           if(key.contains('mock') && count < 10) {
+               debugPrint("Manifest Key: $key");
+               count++;
+           }
+       }
+
        // MOCKS
        _mockAssets = manifestMap.keys
-          .where((key) => key.startsWith('assets/mock/') && key.endsWith('.png'))
+          .where((key) => key.contains('assets/mock/') && key.toLowerCase().endsWith('.png'))
           .toList();
        // TASKS
        _taskAssets = manifestMap.keys
-          .where((key) => key.startsWith('assets/tasks/') && key.endsWith('.txt'))
+          .where((key) => key.contains('assets/tasks/') && key.toLowerCase().endsWith('.txt'))
           .toList();
+       
+       _log("Found ${_mockAssets.length} mocks and ${_taskAssets.length} tasks.");
 
     } catch (e) {
+       _log("❌ Manifest Error: $e");
        debugPrint("Manifest Load Error: $e");
        // Fallbacks
-       _mockAssets = ['assets/mock/screen_login.png'];
+       _mockAssets = [
+           'assets/mock/screen_login.png',
+           'assets/mock/my_windows11_desktop.png',
+           'assets/mock/file_explorer_window.png',
+           'assets/mock/laptop_screen.png',
+           'assets/mock/notepadd_file_menu.png',
+           'assets/mock/notepadd_window_empty_file.png',
+           'assets/mock/screen_dashboard.png',
+           'assets/mock/screen_settings.png',
+           'assets/mock/windows_start_menu.png'
+       ];
        _taskAssets = ['assets/tasks/login_tasks.txt'];
     }
 
@@ -166,6 +220,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
 
   @override
   void dispose() {
+    _logScrollController.dispose(); // [NEW]
     _controller?.dispose();
     _recognizer.close();
     _idleTimer?.cancel();
@@ -188,13 +243,6 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
           
           // 1. Curiosity Analysis (>10s)
           if (idleDuration.inSeconds > 10 && !_isAnalyzingIdle) {
-               
-               // [NEW] Mock Learning Logic
-               bool newMockLoaded = false;
-               if (_useMock) {
-                   newMockLoaded = await _switchToNextUnstudiedMock();
-               }
-
                if (_currentUiState != null) {
                     _log("⏰ Idle Curiosity: Analyzing ${_useMock ? 'Mock Screen' : 'Screen'}...");
                     await _runIdleAnalysis();
@@ -217,18 +265,36 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   }
   
   Future<bool> _switchToNextUnstudiedMock() async {
-      for (final asset in _mockAssets) {
+      int startIndex = -1;
+      if (_currentMockAsset != null) {
+          startIndex = _mockAssets.indexOf(_currentMockAsset!);
+      }
+      
+      // Loop through all assets once, starting from the one AFTER the current one
+      for (int i = 1; i <= _mockAssets.length; i++) {
+          final targetIndex = (startIndex + i) % _mockAssets.length;
+          final asset = _mockAssets[targetIndex];
+          
           if (!_studiedMocks.contains(asset)) {
               setState(() {
                   _currentMockAsset = asset;
-                  _lastInteractionTime = DateTime.now(); // Briefly reset so we don't rapid-fire
+                  
+                  // Reset Context on Auto-Switch
+                  _knownTexts.clear();
+                  _messages.clear(); 
+                  _pendingCuriosityQuestions.clear();
+                  _chatTargetBlock = null; 
+
+                  _lastInteractionTime = DateTime.now(); 
               });
               _log("🖼️ Switched to Unstudied Mock: ${asset.split('/').last}");
-              await _captureAndAnalyze(); // Capture the new screen
+              await _captureAndAnalyze(); 
               return true;
           }
       }
-      return false;
+      _log("✅ All Mocks Studied! Restarting cycle...");
+      _studiedMocks.clear(); // Optional: Clear to loop forever?
+      return false; 
   }
   
   void _resetIdleTimer() {
@@ -237,8 +303,12 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
       if (_pendingCuriosityQuestions.isNotEmpty && !_isChatOpen) {
            setState(() {
                _isChatOpen = true;
-               _messages.add(ChatMessage(sender: 'Robot', text: "While you were idle, I studied the screen. I have a question:"));
-               _messages.add(ChatMessage(sender: 'Robot', text: _pendingCuriosityQuestions.first));
+               _messages.add(ChatMessage(sender: 'Robot', text: "While you were idle, I studied the screen."));
+               _messages.add(ChatMessage(
+                   sender: 'Robot', 
+                   text: _pendingCuriosityQuestions.first,
+                   reasoning: "I analyzed the screen content and identified the current application context. I found 1-2 areas where I lack specific knowledge and generated questions to clarify."
+               ));
                _pendingCuriosityQuestions.removeAt(0);
            });
            
@@ -250,19 +320,77 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   Future<void> _runIdleAnalysis() async {
       if (_currentUiState == null) return;
       
+      // Capture context to detect race conditions
+      final analyzingAsset = _currentMockAsset;
+      final analyzingAssetName = analyzingAsset?.split('/').last ?? "Unknown";
+      
       setState(() => _isAnalyzingIdle = true);
       _log("💤 Idle Mode: Analyzing Screen in Background...");
+      _log("🔍 Starting analysis of: $analyzingAssetName");
       
       try {
-          final questions = await _robot.analyzeIdlePage(_currentUiState!);
-          if (questions.isNotEmpty) {
-               _pendingCuriosityQuestions.addAll(questions);
-               _log("💡 Curiosity: Generated ${questions.length} questions.");
+          final result = await _robot.analyzeIdlePage(_currentUiState!);
+          
+          final currentAssetName = _currentMockAsset?.split('/').last ?? "Unknown";
+          _log("✅ Finished analysis of: $analyzingAssetName (Current screen: $currentAssetName)");
+          
+          // [FIX] Abort if user switched screens while we were thinking
+          if (_currentMockAsset != analyzingAsset) {
+              _log("⚠️ DISCARDED analysis of '$analyzingAssetName' because screen changed to '$currentAssetName'");
+              return;
+          }
+
+          // [FIX] Abort if user became active while we were thinking
+          if (DateTime.now().difference(_lastInteractionTime).inSeconds < 10) {
+               _log("⚠️ DISCARDED analysis because user became active.");
+               return;
+          }
+          
+          // A. Update Known Texts (Green Boxes)
+          if (result.learnedItems.isNotEmpty) {
+              setState(() {
+                  _knownTexts.addAll(result.learnedItems);
+              });
+          }
+
+          // B. Handle Chat Messages
+          if (result.messages.isNotEmpty) {
+               _pendingCuriosityQuestions.addAll(result.messages);
+               _log("💡 Curiosity: Generated ${result.messages.length} messages.");
+               
+               // Proactively ask if we found something
+               if (!_isChatOpen && mounted && _pendingCuriosityQuestions.isNotEmpty) {
+                   setState(() {
+                       _isChatOpen = true;
+                       _messages.add(ChatMessage(sender: 'Robot', text: "While you were idle, I studied the screen."));
+                       _messages.add(ChatMessage(
+                           sender: 'Robot', 
+                           text: _pendingCuriosityQuestions.first,
+                           reasoning: "I analyzed the screen content. I learned ${result.learnedItems.length} new items and have ${result.messages.length} notes."
+                       ));
+                       _pendingCuriosityQuestions.removeAt(0);
+                   });
+               }
+          }
+          
+          // C. Auto-Advance if we learned something and have no questions (Mastery)
+          // [FIX] Do not advance if we just generated questions (even if we popped them for chat)
+          final screenName = _currentMockAsset?.split('/').last ?? "Unknown Screen";
+          final greenCount = result.learnedItems.length;
+          final redCount = result.messages.length; // Approximate "unknowns" count based on questions generated
+          
+          _log("📊 Analysis of '$screenName': Green=$greenCount, Red=$redCount");
+
+          if (result.learnedItems.isNotEmpty && _pendingCuriosityQuestions.isEmpty && result.messages.isEmpty) {
+               _log("🚀 Mastery achieved on this screen. Auto-advancing in 4s...");
+               Timer(const Duration(seconds: 4), () {
+                   if (mounted && _currentMockAsset == analyzingAsset) _switchToNextUnstudiedMock();
+               });
           }
       } catch (e) {
           debugPrint("Idle Err: $e");
       } finally {
-          setState(() => _isAnalyzingIdle = false);
+          if (mounted) setState(() => _isAnalyzingIdle = false);
       }
   }
 
@@ -355,6 +483,10 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
         if (goal != null) _log("🎯 Current Task: $goal");
         
         final decision = await _robot.think(state: _currentUiState!, currentGoal: goal);
+        
+        // [FIX] Safety check: Did user stop us while we were thinking?
+        if (!_isRobotActive || !mounted) return;
+        
         _log("Decision: ${decision.reasoning}");
 
         if (decision.isConfident && decision.action != null) {
@@ -468,7 +600,10 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
        height = decoded.height;
      }
 
-     if (imagePath == null) return;
+     if (imagePath == null) {
+        _log("❌ Failed to capture image (path null)");
+        return;
+     }
 
      final inputImage = InputImage.fromFilePath(imagePath);
      final recognized = await _recognizer.processImage(inputImage);
@@ -502,6 +637,11 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
      if (!_isRecording) {
          try { if (!_useMock) await File(imagePath).delete(); } catch (_) {} 
      }
+
+     // [NEW] Recall Memory
+     _robot.fetchKnownInteractiveElements(state).then((known) {
+        if (mounted) setState(() => _knownTexts = known);
+     });
   }
 
   Future<void> _executeAction(Map<String, dynamic> action) async {
@@ -515,9 +655,13 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
      if (targetText == null) return;
      final t = targetText.toLowerCase();
      String? next;
-     if (t.contains('new presentation')) next = 'ppt_editor_home';
-     else if (t.contains('insert')) next = 'ppt_editor_insert';
-     else if (t.contains('home')) next = 'ppt_home';
+     if (t.contains('new presentation')) {
+        next = 'ppt_editor_home';
+     } else if (t.contains('insert')) {
+        next = 'ppt_editor_insert';
+     } else if (t.contains('home')) {
+        next = 'ppt_home';
+     }
      
      if (next != null) {
         final asset = _mockAssets.firstWhere((a) => a.contains(next!), orElse: () => _currentMockAsset!);
@@ -948,8 +1092,47 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
           });
           
        } else {
-          // Q&A Mode (RAG)
-           setState(() => _messages.add(ChatMessage(sender: 'Robot', text: 'Searching Memory...', isLoading: true)));
+           // Q&A / Clarification Mode
+           setState(() => _messages.add(ChatMessage(sender: 'Robot', text: 'Analyzing...', isLoading: true)));
+           
+           // 1. Check if user is teaching us something new via Chat
+           String? lastRobotQuestion;
+           final robotMsgs = _messages.reversed.where((m) => m.sender == 'Robot' && !m.isLoading && m.text != 'Analyzing...');
+           if (robotMsgs.isNotEmpty) lastRobotQuestion = robotMsgs.first.text;
+           
+           if (_currentUiState != null) {
+               final lesson = await _robot.analyzeUserClarification(
+                   userText: text, 
+                   lastQuestion: lastRobotQuestion, 
+                   state: _currentUiState!
+               );
+               
+               if (lesson != null) {
+                   // ACTIONABLE LESSON FOUND!
+                   await _robot.learn(
+                       state: _currentUiState!,
+                       goal: lesson['goal'],
+                       action: lesson['action'],
+                       factualDescription: lesson['fact'],
+                   );
+                   
+                   setState(() {
+                       _messages.removeLast(); // loading
+                       _messages.add(ChatMessage(
+                           sender: 'Robot', 
+                           text: "Understood! I learned to '${lesson['goal']}' by acting on '${lesson['action']['target_text']}'. Saved to memory.",
+                           reasoning: "I analyzed your reply and extracted a new skill. I have updated my Qdrant memory."
+                       ));
+                       // OPTIONAL: Update visuals?
+                       _robot.fetchKnownInteractiveElements(_currentUiState!).then((known) {
+                           if (mounted) setState(() => _knownTexts = known);
+                       });
+                   });
+                   return;
+               }
+           }
+           
+           // 2. Fallback: RAG (Search Memory)
            final answer = await _robot.answerQuestion(text);
            setState(() {
               _messages.removeLast();
@@ -964,7 +1147,8 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(8.0),
       child: SingleChildScrollView(
-        reverse: true,
+        controller: _logScrollController, // [NEW] Loop auto-scroll
+        // reverse: true, // [FIX] Newest is at top of string, so we want to start at top (offset 0)
         child: Text(
           _statusLog,
           style: const TextStyle(color: Colors.greenAccent, fontFamily: 'Courier', fontSize: 12),
@@ -975,7 +1159,11 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
 
   void _showMockManagerDialog() {
        final pathController = TextEditingController();
-       showDialog(context: context, builder: (ctx) => AlertDialog(
+       // Use local state for the dialog
+       String? selectedAsset = _mockAssets.contains(_currentMockAsset) ? _currentMockAsset : null;
+
+       showDialog(context: context, builder: (ctx) => StatefulBuilder(
+           builder: (context, setDialogState) => AlertDialog(
            title: const Text("Select Mock Screen"),
            content: SingleChildScrollView(
              child: Column(
@@ -985,27 +1173,54 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                    const Text("Asset Library:", style: TextStyle(fontWeight: FontWeight.bold)),
                    DropdownButton<String>(
                        isExpanded: true,
-                       value: _mockAssets.contains(_currentMockAsset) ? _currentMockAsset : null,
+                       value: selectedAsset,
                        hint: const Text("Select Asset..."),
                        items: _mockAssets.map((m) => DropdownMenuItem(value: m, child: Text(m.split('/').last, overflow: TextOverflow.ellipsis))).toList(),
                        onChanged: (val) {
-                           if(val!=null) {
-                               setState(() {
-                                   _currentMockAsset = val;
-                                   _useMock = true; // Force mock mode
+                           if (val != null) {
+                               setDialogState(() {
+                                   selectedAsset = val;
+                                   pathController.clear(); // Clear path if asset selected
                                });
-                               Navigator.pop(ctx);
                            }
                        }
                    ),
-                   const Divider(),
-                   const Text("External File:", style: TextStyle(fontWeight: FontWeight.bold)),
-                   TextField(
-                       controller: pathController, 
-                       decoration: const InputDecoration(
-                           hintText: "/sdcard/images/screen.png", 
-                           suffixIcon: Icon(Icons.image)
-                       )
+                   const Text("External File (Device Storage):", style: TextStyle(fontWeight: FontWeight.bold)),
+                   Row(
+                       children: [
+                           Expanded(
+                               child: TextField(
+                                   controller: pathController, 
+                                   decoration: const InputDecoration(
+                                       hintText: "/path/to/image.png", 
+                                       isDense: true,
+                                       contentPadding: EdgeInsets.all(8)
+                                   ),
+                                   onChanged: (val) {
+                                       if (val.isNotEmpty && selectedAsset != null) {
+                                           setDialogState(() => selectedAsset = null); 
+                                       }
+                                   },
+                               ),
+                           ),
+                           IconButton(
+                               icon: const Icon(Icons.folder_open, color: Colors.blue),
+                               tooltip: "Open File Chooser",
+                               onPressed: () async {
+                                   try {
+                                       final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+                                       if (image != null) {
+                                           setDialogState(() {
+                                               pathController.text = image.path;
+                                               selectedAsset = null; // Clear preset
+                                           });
+                                       }
+                                   } catch (e) {
+                                       debugPrint("Picker Error: $e");
+                                   }
+                               },
+                           )
+                       ],
                    ),
                ],
              ),
@@ -1013,16 +1228,33 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
            actions: [
                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
                ElevatedButton(onPressed: () {
+                   String? target;
                    if (pathController.text.isNotEmpty) {
+                       target = pathController.text.trim();
+                   } else if (selectedAsset != null) {
+                       target = selectedAsset;
+                   }
+
+                   if (target != null) {
                        setState(() {
-                           _currentMockAsset = pathController.text.trim();
+                           _currentMockAsset = target;
                            _useMock = true;
+                           
+                           // Reset Context
+                           _knownTexts.clear();
+                           _messages.clear(); 
+                           _pendingCuriosityQuestions.clear();
+                           _chatTargetBlock = null; 
+                           
+                           _resetIdleTimer();
+                           // _studiedMocks.add(target!); // Wait for analysis
                        });
                        Navigator.pop(ctx);
+                       _captureAndAnalyze(); // Force immediate update
                    }
-               }, child: const Text("Load File"))
+               }, child: const Text("Load Screen"))
            ]
-       ));
+       )));
   }
 
   @override
@@ -1059,7 +1291,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
            Switch(
              value: _isTrainingMode, 
              onChanged: (val) => setState(() => _isTrainingMode = val),
-             activeColor: Colors.orange,
+             activeTrackColor: Colors.orange,
            ),
            const Text("Train ", style: TextStyle(fontSize: 12)),
            
@@ -1078,8 +1310,11 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                 flex: 3,
                 child: Container(
                   decoration: _isRecording ? BoxDecoration(border: Border.all(color: Colors.red, width: 4)) : null,
-                  child: Stack(
-                      fit: StackFit.expand,
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: (_imageWidth > 0 && _imageHeight > 0) ? _imageWidth / _imageHeight : 1,
+                      child: Stack(
+                          fit: StackFit.expand,
                       children: [
                           if (_useMock && _currentMockAsset != null)
                              // Support both Assets and Files
@@ -1096,10 +1331,13 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                                  blocks: _blocks, imageSize: Size(_imageWidth.toDouble(), _imageHeight.toDouble()),
                                  previewSize: size, rotation: InputImageRotation.rotation0deg, cameraLensDirection: CameraLensDirection.back,
                                  highlightedBlock: _chatTargetBlock,
+                                 learnedTexts: _knownTexts,
                              )),
                              
                           if (_isThinking) const Center(child: CircularProgressIndicator(color: Colors.red)),
                       ],
+                  ),
+                    ),
                   ),
                 ),
               ),
@@ -1149,13 +1387,19 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                            child: ListView.builder(
                              controller: scrollController,
                              itemCount: _messages.length,
-                             itemBuilder: (ctx, i) => _buildChatMessage(_messages[i]),
+                             reverse: true, // [FIX] Auto-scrolls to bottom on new message
+                             itemBuilder: (ctx, i) {
+                                final reversedIndex = _messages.length - 1 - i;
+                                return _buildChatMessage(_messages[reversedIndex]);
+                             },
                            ),
                          ),
                          Padding(
                            padding: const EdgeInsets.all(8.0),
                            child: TextField(
                              controller: _chatController,
+                             minLines: 1,
+                             maxLines: 5, // [NEW] Multi-line support
                              decoration: InputDecoration(
                                hintText: _reviewSession != null ? "Verify Hypothesis..." : "Type reply...",
                                suffixIcon: IconButton(
@@ -1170,6 +1414,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                                ),
                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
                              ),
+                             // onSubmitted doesn't fire for multiline with Enter usually, but we keep it for physical keyboards execution if supported
                              onSubmitted: (val) {
                                 if (val.isNotEmpty) {
                                   _handleUserChat(val);
@@ -1224,15 +1469,26 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+               // Timestamp
+               Padding(
+                 padding: const EdgeInsets.only(bottom: 4.0),
+                 child: Text(
+                    "${msg.timestamp.hour.toString().padLeft(2,'0')}:${msg.timestamp.minute.toString().padLeft(2,'0')}:${msg.timestamp.second.toString().padLeft(2,'0')}",
+                    style: TextStyle(fontSize: 10, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                 ),
+               ),
+               
                if (msg.imageBytes != null)
                    Padding(
                      padding: const EdgeInsets.only(bottom: 8),
                      child: Image.memory(msg.imageBytes!, height: 100),
                    ),
-               if (msg.isLoading)
-                  const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-               else
-                  Text(msg.text),
+                if (msg.isLoading)
+                   const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                else ...[
+                   if (msg.reasoning != null) ThinkingSection(content: msg.reasoning!),
+                   Text(msg.text),
+                ],
                   
                if (msg.verificationSteps != null)
                   Column(
@@ -1240,20 +1496,16 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                      children: msg.verificationSteps!.map((step) {
                          IconData icon;
                          Color color;
-                         String tooltip;
                          
                          if (step.confidence > 0.85) {
                              icon = Icons.check_circle;
                              color = Colors.green;
-                             tooltip = "Known Step";
                          } else if (step.confidence > 0.5) {
                              icon = Icons.remove_circle_outline; // Dash-ish
                              color = Colors.orange;
-                             tooltip = "Partly Known";
                          } else {
                              icon = Icons.cancel;
                              color = Colors.red;
-                             tooltip = "Unknown";
                          }
                          
                          return Padding(
@@ -1281,7 +1533,9 @@ class ChatMessage {
   final Uint8List? imageBytes;
   final OcrBlock? highlightBlock;
   final bool isLoading;
-  final List<TaskStepVerification>? verificationSteps; // [NEW]
+  final List<TaskStepVerification>? verificationSteps;
+  final String? reasoning;
+  final DateTime timestamp;
 
   ChatMessage({
       required this.sender, 
@@ -1290,5 +1544,37 @@ class ChatMessage {
       this.highlightBlock, 
       this.isLoading = false,
       this.verificationSteps,
-  });
+      this.reasoning,
+      DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+}
+
+class ThinkingSection extends StatelessWidget {
+  final String content;
+  const ThinkingSection({super.key, required this.content});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.yellow[100],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+            Row(children: const [
+               Icon(Icons.lightbulb, size: 14, color: Colors.orange),
+               SizedBox(width: 4),
+               Text("Thinking Process", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange)),
+            ]),
+            const SizedBox(height: 4),
+            Text(content, style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.black87)),
+        ],
+      ),
+    );
+  }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../vision/ocr_models.dart';
@@ -24,13 +25,22 @@ class RobotDecision {
   String toString() => 'Confident: $isConfident | $reasoning | Action: $action';
 }
 
+class IdleAnalysisResult {
+    final List<String> messages;
+    final Set<String> learnedItems;
+    
+    IdleAnalysisResult({this.messages = const [], this.learnedItems = const {}});
+}
+
 class RobotService {
   RobotService({
     required this.ollama,
+    required this.ollamaEmbed, // [NEW]
     required this.qdrant,
   });
 
   final OllamaClient ollama;
+  final OllamaClient ollamaEmbed; // [NEW]
   final QdrantService qdrant;
   
   // Training Section
@@ -55,13 +65,13 @@ class RobotService {
           : description;
 
       // 2. Embed & Search Memory
-      final embedding = await ollama.embed(prompt: prompt);
+      final embedding = await ollamaEmbed.embed(prompt: prompt);
       
       // Search Qdrant
       final memories = await qdrant.search(
         queryEmbedding: embedding,
-        limit: 1, 
-      );
+        limit: 5, // [FIX] Get more context to avoid repetition
+      ); 
       
       if (memories.isNotEmpty) {
         final best = memories.first;
@@ -124,7 +134,7 @@ class RobotService {
     final prompt = 'Goal: $goal. Screen: $description';
 
     // 2. Embed
-    final embedding = await ollama.embed(prompt: prompt);
+    final embedding = await ollamaEmbed.embed(prompt: prompt);
 
     // 3. Save
     await qdrant.saveMemory(
@@ -138,6 +148,36 @@ class RobotService {
         'timestamp': DateTime.now().toIso8601String(),
       },
     );
+  }
+
+  /// Recalls "Known" interactive elements for the current screen context.
+  /// Returns a set of text labels (target_text) that resulted in successful actions in the past.
+  Future<Set<String>> fetchKnownInteractiveElements(UIState state) async {
+      try {
+          final description = state.toLLMDescription();
+          final embedding = await ollamaEmbed.embed(prompt: description);
+          
+          // Search broadly for this context
+          final memories = await qdrant.search(
+            queryEmbedding: embedding,
+            limit: 15, // Check top 15 relevant memories
+          );
+          
+          final known = <String>{};
+          for (final m in memories) {
+              final payload = m['payload'] as Map<String, dynamic>;
+              if (payload.containsKey('action')) {
+                  final action = payload['action'] as Map<String, dynamic>;
+                  if (action.containsKey('target_text')) {
+                      known.add(action['target_text'].toString());
+                  }
+              }
+          }
+          return known;
+      } catch (e) {
+          debugPrint("Memory Fetch Error: $e");
+          return {};
+      }
   }
   
   // Verifys if we know how to do a user's instruction
@@ -153,7 +193,8 @@ class RobotService {
        List<String> steps = [];
        try {
            final response = await ollama.generate(prompt: prompt, numPredict: 100);
-           final clean = response.replaceAll('```json', '').replaceAll('```', '').trim();
+           debugPrint("[OLLAMA RAW - Decompose]: $response");
+           final clean = _extractJson(response);
            steps = (jsonDecode(clean) as List).cast<String>();
        } catch (e) {
            // Fallback if decomposition fails
@@ -164,7 +205,7 @@ class RobotService {
        final results = <TaskStepVerification>[];
        
        for (final step in steps) {
-           final embedding = await ollama.embed(prompt: step);
+           final embedding = await ollamaEmbed.embed(prompt: step);
            final memories = await qdrant.search(queryEmbedding: embedding, limit: 1);
            
            bool known = false;
@@ -204,7 +245,8 @@ class RobotService {
 
       try {
         final response = await ollama.generate(prompt: prompt, numPredict: 128);
-        final clean = response.replaceAll('```json', '').replaceAll('```', '').trim();
+        debugPrint("[OLLAMA RAW - Teach]: $response");
+        final clean = _extractJson(response);
         return jsonDecode(clean);
       } catch (e) {
         debugPrint("Parse Error: $e");
@@ -218,7 +260,7 @@ class RobotService {
 
   Future<String> answerQuestion(String question) async {
      try {
-       final embedding = await ollama.embed(prompt: question);
+       final embedding = await ollamaEmbed.embed(prompt: question);
        final results = await qdrant.search(queryEmbedding: embedding, limit: 3);
        
        final context = results.map((r) {
@@ -243,30 +285,113 @@ class RobotService {
   // --- IDLE CURIOSITY METHODS ---
   
   /// Called periodically during user inactivity to "daydream" or analyze the screen.
-  /// Returns a list of generated questions for the user.
-  Future<List<String>> analyzeIdlePage(UIState state) async {
+  Future<IdleAnalysisResult> analyzeIdlePage(UIState state) async {
        // Only analyze if state has significant content (e.g. headers, windows)
        final text = state.toLLMDescription();
        
+       // 1. Check what we already know to avoid asking dumb questions
+       // [TEMP] Disable Recall to prevent Model Swapping (RAM Thrashing)
+       // final embedding = await ollamaEmbed.embed(prompt: text);
+       // final knownMemories = await qdrant.search(queryEmbedding: embedding, limit: 10);
+       // final knownGoals = knownMemories...
+       final knownGoals = ""; // Empty context for speed
+
        final prompt = '''
-       I am an AI Robot looking at this screen content:
+       You are analyzing a CURRENT screen capture. Output ONLY valid JSON, no markdown, no explanations.
+       
+       CURRENT SCREEN TEXT ELEMENTS:
        $text
        
-       Identify the main application or context (e.g., 'PowerPoint', 'Gmail').
-       Generate 1-2 curiosity questions to ask the user to learn more about this context.
-       However, if the context is obvious or trivial, return nothing.
+       ALREADY LEARNED (ignore these): [$knownGoals]
        
-       Format output as JSON list of strings: ["What is the purpose of the 'Submit' button here?", "Is this a production environment?"]
+       TASK: For each UI element in the CURRENT screen text above:
+       - If you recognize its standard function (e.g., "Save", "Close", "Settings"), create an "insight"
+       - If you don't understand its purpose, create a "question" asking what it does
+       - IMPORTANT: Only analyze elements that are ACTUALLY PRESENT in the current screen text above
+       - DO NOT mention elements from other screens or contexts
+       
+       OUTPUT FORMAT (pure JSON, no markdown):
+       {
+         "insights": [
+           {
+             "goal": "Brief action name",
+             "action": {"type": "click", "target_text": "Exact text from current screen"},
+             "fact": "What clicking this does"
+           }
+         ],
+         "questions": ["What does [specific element from current screen] do?"]
+       }
+       
+       Return {"insights": [], "questions": []} if current screen has no new elements to learn.
        ''';
        
        try {
-          final response = await ollama.generate(prompt: prompt, numPredict: 100);
-          final clean = response.replaceAll('```json', '').replaceAll('```', '').trim();
-          final List<dynamic> json = jsonDecode(clean);
-          return json.cast<String>();
+          final stopwatch = Stopwatch()..start();
+          
+          // [DEBUG] Start Heartbeat Logger
+          final timer = Timer.periodic(const Duration(seconds: 5), (t) {
+              debugPrint("⏳ [Ollama Wait] Still waiting... (${t.tick * 5}s elapsed)");
+          });
+
+          debugPrint("🚀 [Ollama Start] Sending request to '${ollama.model}'...");
+          String response;
+          try {
+             response = await ollama.generate(prompt: prompt, numPredict: 256);
+          } finally {
+             timer.cancel(); // Stop heartbeat
+             stopwatch.stop();
+          }
+          
+          debugPrint("✅ [Ollama Done] Response received in ${stopwatch.elapsed.inSeconds}s.");
+          debugPrint("[ROBOT] [OLLAMA RAW]: $response");
+          var clean = _extractJson(response).trim();
+          
+          if (!clean.startsWith('{')) {
+               final startBrace = clean.indexOf('{');
+               if (startBrace != -1) clean = clean.substring(startBrace);
+          }
+           
+          final dynamic decoded = jsonDecode(clean);
+          final messages = <String>[];
+          final learned = <String>{};
+          
+          if (decoded is Map<String, dynamic>) {
+              // 1. Process Insights (Auto-Learn)
+              if (decoded.containsKey('insights') && decoded['insights'] is List) {
+                  for (final item in decoded['insights']) {
+                      if (item is Map<String, dynamic>) {
+                          final goal = item['goal']?.toString() ?? 'Unknown Goal';
+                          final action = item['action'] as Map<String, dynamic>? ?? {};
+                          final fact = item['fact']?.toString() ?? '';
+                          
+                          if (action.isNotEmpty && action.containsKey('target_text')) {
+                              // Execute Learning Side-Effect
+                              await learn(
+                                  state: state, 
+                                  goal: goal, 
+                                  action: action, 
+                                  factualDescription: fact
+                              );
+                              final target = action['target_text'].toString();
+                              learned.add(target);
+                              messages.add("💡 I autonomously learned that '$target' is used to '$goal'. Saved to memory.");
+                          }
+                      }
+                  }
+              }
+              
+              // 2. Process Questions
+              if (decoded.containsKey('questions') && decoded['questions'] is List) {
+                  for (final q in decoded['questions']) {
+                      messages.add(q.toString());
+                  }
+              }
+          }
+          
+          return IdleAnalysisResult(messages: messages, learnedItems: learned);
        } catch (e) {
-          debugPrint("Idle Analysis Failed: $e");
-          return [];
+          debugPrint("[ROBOT] ❌ Idle Analysis Failed: $e");
+          return IdleAnalysisResult();
        }
   }
 
@@ -291,6 +416,52 @@ class RobotService {
           return await ollama.generate(prompt: prompt, numPredict: 128);
        } catch (e) {
           return "I could not diagnose the failure. Error: $e";
+       }
+  }
+
+  // --- CLARIFICATION ANALYSIS ---
+
+  Future<Map<String, dynamic>?> analyzeUserClarification({
+      required String userText,
+      required String? lastQuestion,
+      required UIState state,
+  }) async {
+       final screenDesc = state.toLLMDescription();
+       final prompt = '''
+       I am a Robot Assistant. I asked the user: "${lastQuestion ?? 'What should I do?'}".
+       The user replied: "$userText".
+       
+       The current screen contains:
+       $screenDesc
+       
+       Analyze the user's reply. Does it teach me how to perform a specific action on this screen?
+       If YES, extract the following as JSON:
+       {
+         "goal": "Short description of the goal (e.g. 'Opening Settings')",
+         "action": {
+            "type": "click" or "type",
+            "target_text": "The exact text on the UI element to interact with",
+            "text": "Text to type if type action" (optional)
+         },
+         "fact": "A factual summary of what this element does"
+       }
+       
+       If the user is just chatting or I cannot map it to a UI element, return only: {"analysis": "no_action"}
+       ''';
+       
+       try {
+           final response = await ollama.generate(prompt: prompt, numPredict: 256);
+           debugPrint("[OLLAMA RAW - Clarify]: $response");
+           final clean = _extractJson(response);
+           final dynamic json = jsonDecode(clean);
+           
+           if (json is Map && json.containsKey('action')) {
+               return json as Map<String, dynamic>;
+           }
+           return null;
+       } catch (e) {
+           debugPrint("Clarification Analysis Failed: $e");
+           return null;
        }
   }
   
@@ -441,6 +612,7 @@ class RobotService {
           ''';
           
           final response = await ollama.generate(prompt: prompt, numPredict: 100);
+          debugPrint("[OLLAMA RAW - Hypothesis]: $response");
           final clean = response.replaceAll('```json', '').replaceAll('```', '').trim();
           final json = jsonDecode(clean);
           
@@ -521,5 +693,48 @@ class RobotService {
       // For now, we simulate a "consolidation" delay
       await Future.delayed(const Duration(seconds: 2));
       debugPrint("Memory Optimized (Simulated). Verified Qdrant Collection Health.");
+  }
+  // Helper to extract JSON from Llama's chatty response
+  String _extractJson(String response) {
+      // 1. Remove Markdown code blocks if present
+      final codeBlockRegex = RegExp(r'```(?:json)?\s*([\s\S]*?)\s*```');
+      final match = codeBlockRegex.firstMatch(response);
+      if (match != null) {
+          response = match.group(1) ?? response;
+      }
+      
+      // 2. Find start of JSON structure
+      int start = response.indexOf('[');
+      int startObj = response.indexOf('{');
+      
+      int index = -1;
+      if (start != -1 && startObj != -1) {
+          index = start < startObj ? start : startObj;
+      } else if (start != -1) {
+          index = start;
+      } else if (startObj != -1) {
+          index = startObj;
+      }
+      
+      if (index == -1) return "{}"; 
+      
+      String clean = response.substring(index);
+
+      // 3. Find end of JSON structure
+      int end = -1;
+      if (clean.startsWith('[')) {
+           end = clean.lastIndexOf(']');
+      } else {
+           end = clean.lastIndexOf('}');
+      }
+         
+      if (end != -1) {
+          return clean.substring(0, end + 1);
+      } else {
+          // Heuristic fix for truncated JSON
+          if (clean.startsWith('{')) return "$clean}"; 
+          if (clean.startsWith('[')) return "$clean]"; 
+      }
+      return clean;
   }
 }

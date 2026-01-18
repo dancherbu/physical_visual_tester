@@ -77,7 +77,7 @@ class _CalibrationOverlayState extends State<CalibrationOverlay> {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.3),
+                      color: Colors.blue.withValues(alpha: 0.3),
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
                     ),

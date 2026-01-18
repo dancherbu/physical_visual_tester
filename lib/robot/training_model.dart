@@ -1,4 +1,3 @@
-import 'dart:convert';
 import '../vision/ocr_models.dart';
 
 enum TrainingEventType {
@@ -7,7 +6,7 @@ enum TrainingEventType {
   navigation,   // Significant screen change
   typing,       // Text content change in small area
   click,        // Inferred click (state change)
-  idle_analysis // Generated during idle time
+  idleAnalysis // Generated during idle time
 }
 
 class TrainingSession {

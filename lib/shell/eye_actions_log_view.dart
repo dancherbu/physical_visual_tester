@@ -92,7 +92,7 @@ class _EyeActionsLogViewState extends State<EyeActionsLogView> {
       });
 
       await _startStream();
-      _startOcrLoop();
+      // _startOcrLoop(); // [DISABLED] Moving to RobotTesterPage for AI Vision
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -134,10 +134,7 @@ class _EyeActionsLogViewState extends State<EyeActionsLogView> {
     });
   }
 
-  void _startOcrLoop() {
-    _ocrTimer?.cancel();
-    _ocrTimer = Timer.periodic(_ocrInterval, (_) => _processFrame());
-  }
+
 
   Future<void> _processFrame() async {
     if (_ocrBusy || !_streaming || _error != null) return;
@@ -250,8 +247,6 @@ class _EyeActionsLogViewState extends State<EyeActionsLogView> {
       builder: (context, constraints) {
         final previewSize = Size(constraints.maxWidth, constraints.maxHeight);
         
-        // Calculate scale to fit/cover
-        final scale = 1.0; 
         // Note: CameraPreview aspect ratio handling is tricky. 
         // For this simple tester, letting Flutter's CameraPreview handle it is simplest,
         // but our overlay might misalign if aspect ratios differ significantly.

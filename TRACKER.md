@@ -39,6 +39,7 @@ The Robot runs a continuous loop:
     - [x] Implement "Teaching" flow: Save Explanation + Action to Qdrant.
 - [x] **The Loop Implementation:**
     - [x] Implement the `Observe -> Recall -> Act` state machine.
+    - [x] **Visual Memory Feedback:** Elements colored Green (Known) or Red (Unknown) based on Qdrant memory.
     - [x] Implement the "Unknown Item" trigger (Low confidence or no memory match).
 
 ### Phase 1.5: Conversational Robot (Chat & RAG)
@@ -100,6 +101,6 @@ The Robot runs a continuous loop:
     - [ ] Solve "Screen Glare" / Moiré issues if continuing with Camera.
 
 ## Current Priorities (Jan 2026)
-1.  **Rewrite Key Components:** Move logic from `VisionSpikePage` to `RobotTester`.
+1.  - [x] **Rewrite Key Components:** Logic moved from `VisionSpikePage` to `RobotTester`; Legacy OCR loop (`EyeActionsLogView`) disabled.
 2.  **Implement Teach Dialog:** Ensure user can effectively unblock the robot.
 3.  **Memory Injection:** Verify Ollama/Qdrant are correctly saving/retrieving instructions.

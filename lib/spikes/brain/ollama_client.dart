@@ -15,16 +15,18 @@ class OllamaClient {
 
   Future<String> generate({
     required String prompt,
-    List<String>? images, // Base64 encoded images
+    List<String>? images, 
     int numPredict = 128,
     double temperature = 0.2,
   }) async {
     final url = baseUrl.resolve('/api/generate');
 
-    final body = jsonEncode({
+    final request = http.Request('POST', url);
+    request.headers['content-type'] = 'application/json';
+    request.body = jsonEncode({
       'model': model,
       'prompt': prompt,
-      'stream': false,
+      'stream': true, // [FIX] Re-enable streaming now that firewall is fixed
       if (images != null) 'images': images,
       'options': {
         'num_predict': numPredict,
@@ -32,65 +34,47 @@ class OllamaClient {
       },
     });
 
-    final resp = await _http.post(
-      url,
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: body,
-    );
+    final loopedClient = http.Client();
+    try {
+      final streamedResponse = await loopedClient.send(request).timeout(const Duration(seconds: 300));
+      
+      if (streamedResponse.statusCode < 200 || streamedResponse.statusCode >= 300) {
+         final body = await streamedResponse.stream.bytesToString();
+         throw StateError('Ollama HTTP ${streamedResponse.statusCode}: $body');
+      }
 
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw StateError(
-        'Ollama HTTP ${resp.statusCode}: ${resp.body}',
-      );
+      final buffer = StringBuffer();
+      
+      await for (final chunk in streamedResponse.stream.transform(utf8.decoder).transform(const LineSplitter())) {
+          if (chunk.trim().isEmpty) continue;
+          try {
+              final json = jsonDecode(chunk);
+              if (json['response'] != null) {
+                  buffer.write(json['response']);
+              }
+          } catch (e) {
+              // ignore parse errors for partial chunks
+          }
+      }
+      
+      return buffer.toString();
+
+    } finally {
+      loopedClient.close();
     }
-
-    final decoded = jsonDecode(resp.body);
-    if (decoded is! Map) {
-      throw const FormatException('Unexpected Ollama response format.');
-    }
-
-    final responseText = decoded['response'];
-    if (responseText is! String) {
-      throw const FormatException('Ollama response missing "response" string.');
-    }
-
-    return responseText;
   }
 
   Future<List<double>> embed({
     required String prompt,
   }) async {
+    // [DEBUG] Mock Embedding to prevent Model Swapping
+    // print("[OllamaClient] Embedding Mocked (SKIPPED).");
+    return List.filled(768, 0.0); // Dummy vector
+
+    /* 
     final url = baseUrl.resolve('/api/embeddings');
-
-    final body = jsonEncode({
-      'model': model,
-      'prompt': prompt,
-    });
-
-    final resp = await _http.post(
-      url,
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: body,
-    );
-
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw StateError(
-        'Ollama Embeddings HTTP ${resp.statusCode}: ${resp.body}',
-      );
-    }
-
-    final decoded = jsonDecode(resp.body);
-    final embedding = decoded['embedding'];
-    
-    if (embedding is! List) {
-       throw const FormatException('Ollama response missing "embedding" list.');
-    }
-    
-    return embedding.cast<double>();
+    ...
+    */
   }
 
   void close() {

@@ -120,7 +120,7 @@ class UIState {
   /// Generates a dense textual description for Ollama.
   String toLLMDescription() {
     final buffer = StringBuffer();
-    buffer.writeln('Screen Resolution: ${imageWidth}x${imageHeight}');
+    buffer.writeln('Screen Resolution: ${imageWidth}x$imageHeight');
     buffer.writeln('Visible Text Elements:');
     for (final block in ocrBlocks) {
       buffer.writeln('- ${block.toLLMDescription()}');

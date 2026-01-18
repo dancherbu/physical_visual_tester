@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:io';
 import 'dart:convert';
-import 'dart:typed_data';
+
 
 import 'package:flutter/services.dart'; // rootBundle
 import 'package:camera/camera.dart';
@@ -20,9 +20,7 @@ import '../brain/teacher_service.dart';
 import '../brain/ollama_client.dart';
 import '../brain/qdrant_service.dart';
 
-// HID
-import '../../hid/hid_contract.dart';
-import '../../hid/method_channel_hid_adapter.dart';
+
 
 class VisionSpikePage extends StatefulWidget {
   const VisionSpikePage({super.key});
@@ -35,9 +33,6 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
   CameraController? _controller;
   CameraDescription? _camera;
   final _recognizer = TextRecognizer(script: TextRecognitionScript.latin);
-  
-  // HID
-  final HidAdapter _hid = MethodChannelHidAdapter();
   
   // AI / Teacher
   TeacherService? _teacher;
@@ -492,7 +487,7 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
       barrierColor: Colors.transparent, 
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          backgroundColor: Theme.of(context).dialogBackgroundColor.withOpacity(0.7),
+          backgroundColor: Theme.of(context).dialogTheme.backgroundColor?.withValues(alpha: 0.7) ?? Colors.white.withValues(alpha: 0.7),
           elevation: 0,
           title: const Text('Teach: What are we doing?'),
           content: Column(
@@ -958,8 +953,6 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
     }
 
     // 1. Get Block Center in Image Pixels
-    final centerImage = block.boundingBox.center; 
-    // center is string "[x, y]", we need doubles. Re-calculate.
     final cx = block.boundingBox.left + block.boundingBox.width / 2;
     final cy = block.boundingBox.top + block.boundingBox.height / 2;
 

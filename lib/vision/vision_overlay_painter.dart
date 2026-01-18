@@ -59,7 +59,7 @@ class VisionOverlayPainter extends CustomPainter {
          paintToUse = Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.0
-            ..color = Colors.grey.withOpacity(0.2); 
+            ..color = Colors.grey.withValues(alpha: 0.2); 
       } else {
          // Normal mode
          paintToUse = isLearned ? paintLearned : paintUnlearned;

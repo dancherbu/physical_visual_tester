@@ -7,7 +7,7 @@ import '../hid/hid_reconnection_dialog.dart';
 import 'dashboard_sheet.dart';
 import 'eye_actions_log_view.dart';
 import '../robot/robot_tester_page.dart';
-import '../spikes/vision/vision_spike_page.dart';
+
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
