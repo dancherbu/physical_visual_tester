@@ -9,6 +9,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:screen_capturer/screen_capturer.dart';
 
+import '../hid/hid_contract.dart';
+import '../hid/windows_hid_adapter.dart';
 import '../robot/robot_service.dart';
 import '../spikes/brain/ollama_client.dart';
 import '../spikes/brain/qdrant_service.dart';
@@ -23,7 +25,8 @@ class DesktopRobotPage extends StatefulWidget {
 
 class _DesktopRobotPageState extends State<DesktopRobotPage> {
   RobotService? _robot;
-
+  HidAdapter? _hid; // [NEW] Windows HID Adapter
+  
   final _ollamaController = TextEditingController(text: 'http://localhost:11434');
   final _qdrantController = TextEditingController(text: 'http://localhost:6333');
   final _chatController = TextEditingController();
@@ -55,6 +58,7 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
   bool _isCapturing = false;
   bool _isOcrRunning = false;
   bool _isTaskAnalyzing = false;
+  bool _isRobotRunning = false; // [NEW] Active Mode
 
   @override
   void initState() {
@@ -131,6 +135,12 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
 
       setState(() {
         _robot = RobotService(ollama: ollama, ollamaEmbed: embed, qdrant: qdrant);
+        if (Platform.isWindows) {
+            _hid = WindowsNativeHidAdapter(); // Native Windows Input
+            _log('✅ Initialized Windows Mouse/Keyboard Adapter.');
+        } else {
+            _log('⚠️ Native Input not supported on ${Platform.operatingSystem}');
+        }
         _connected = true;
       });
       _log('✅ Connected to Ollama & Qdrant.');
@@ -636,6 +646,136 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     }
   }
 
+  Future<void> _startRobotLoop() async {
+    if (_isRobotRunning) return;
+    setState(() {
+      _isRobotRunning = true;
+      _isIdleAnalyzing = false; // Disable idle while active
+    });
+    _log("🚀 Robot Mode STARTED. I will act autonomously.");
+    _runRobotLoop();
+  }
+  
+  Future<void> _stopRobotLoop() async {
+    if (!_isRobotRunning) return;
+    setState(() => _isRobotRunning = false);
+    _log("🛑 Robot Mode STOPPED.");
+  }
+
+  Future<void> _runRobotLoop() async {
+     if (!_isRobotRunning) return;
+     if (!mounted) return;
+
+     _log("--- Active Cycle Start ---");
+     
+     // 1. See (Capture & OCR)
+     if (_useLiveScreen) {
+        await _captureScreen();
+     } else {
+        // Reuse current mock if not live, but typically 'Active Mode' implies live
+        if (_currentUiState == null) {
+           _log("⚠️ Using Mock for Active Mode. Ensure mock is loaded.");
+        }
+     }
+     
+     await _runOcrOnCapture();
+     final state = _currentUiState;
+     
+     // 2. Think
+     if (state != null) {
+        final robot = _robot;
+        if (robot != null) {
+            // Get current goal from task controller if any, or chat? 
+            // For now, let's use the task controller's first line as goal, or similar.
+            // Or just 'Explore' if empty.
+            String goal = _taskController.text.trim().split('\n').first;
+            if (goal.isEmpty) goal = "Explore and analyze the screen";
+
+            final decision = await robot.think(state: state, currentGoal: goal);
+            
+            _log("🤔 Decision: ${decision.reasoning}");
+            
+            // 3. Act
+            if (decision.isConfident && decision.action != null && _hid != null) {
+                // Execute
+                await _executeAction(decision.action!);
+            } else if (decision.isConfident && decision.action == null) {
+                _log("✅ Analyzed: ${decision.reasoning} (No physical action needed)");
+            }
+        }
+     }
+     
+     _log("--- Cycle End (Waiting 3s) ---");
+     await Future.delayed(const Duration(seconds: 3));
+     
+     // Loop
+     if (_isRobotRunning) {
+         _runRobotLoop();
+     }
+  }
+
+  Future<void> _executeAction(Map<String, dynamic> action) async {
+    _resetIdleTimer();
+    final hid = _hid;
+    if (hid == null) {
+        _log("⚠️ No HID Adapter available. Cannot execute action.");
+        return;
+    }
+
+    final type = action['type'] as String? ?? 'click';
+    
+    try {
+        if (type == 'click') {
+            final x = action['x'] as int;
+            final y = action['y'] as int;
+            
+            _log("🖱️ Moving Mouse to ($x, $y) (Native)...");
+            
+            // Native Window usually supports absolute positioning directly
+            await hid.sendMouseMove(dx: x, dy: y);
+            await Future.delayed(const Duration(milliseconds: 100));
+            
+            await hid.sendClick(HidMouseButton.left);
+            _log("✅ Clicked Left Mouse Button.");
+            
+        } else if (type == 'keyboard_type') {
+            final text = action['target_text'] as String;
+            _log("⌨️ Typing: \"$text\"");
+            await hid.sendKeyText(text);
+            await hid.sendKeyText('\n'); 
+            _log("✅ Typed text.");
+            
+        } else if (type == 'keyboard_key') {
+            final key = (action['target_text'] as String).toLowerCase();
+            String? toSend;
+            if (key == 'enter' || key == 'return') toSend = '\n';
+            else if (key == 'tab') toSend = '\t';
+            else if (key == 'space') toSend = ' ';
+            
+            if (toSend != null) {
+               _log("⌨️ Pressing Key: $key");
+               await hid.sendKeyText(toSend);
+            } else {
+               _log("⚠️ HID: Key '$key' not mapped.");
+            }
+
+        } else if (type == 'keyboard_shortcut') {
+            // Can be implemented in WindowsNativeHidAdapter later (modifier keys)
+             _log("⚠️ Shortcut '$action' not fully implemented yet.");
+             
+        } else if (type == 'mouse_right_click') {
+             // If coordinates provided, move first
+             if (action.containsKey('x')) {
+                 await hid.sendMouseMove(dx: action['x'], dy: action['y']);
+             }
+             await hid.sendClick(HidMouseButton.right);
+             _log("✅ Right Clicked.");
+        }
+    } catch (e) {
+        _log("❌ Execution Failed: $e");
+    }
+  }
+
   Widget _buildLeftPanel() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -718,6 +858,22 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+           children: [
+             Expanded(
+               child: ElevatedButton.icon(
+                 style: ElevatedButton.styleFrom(
+                   backgroundColor: _isRobotRunning ? Colors.redAccent : Colors.green,
+                   foregroundColor: Colors.white,
+                 ),
+                 onPressed: _isRobotRunning ? _stopRobotLoop : _startRobotLoop,
+                 icon: Icon(_isRobotRunning ? Icons.stop : Icons.play_arrow),
+                 label: Text(_isRobotRunning ? 'Stop Robot' : 'Start Active Mode'),
+               ),
+             ),
+           ],
         ),
         const SizedBox(height: 8),
         Expanded(
