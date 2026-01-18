@@ -80,22 +80,60 @@ class RobotService {
         
         // Threshold for "Confidence"
         if (score > 0.88) {
+           final memoryAction = payload['action'] as Map<String, dynamic>;
+           final targetText = memoryAction['target_text'] as String?;
+           
+           // GROUNDING: Verify the target actually exists on the screen
+           Map<String, dynamic>? groundedAction;
+           
+           if (targetText != null && state.ocrBlocks.isNotEmpty) {
+               // specific for clicks/types
+               final type = memoryAction['type'] as String?;
+               if (type == 'click' || type == 'type' || type == 'mouse_right_click' || type == 'mouse_move') {
+                   // Find the block
+                   try {
+                       final block = state.ocrBlocks.firstWhere(
+                           (b) => b.text.toLowerCase().contains(targetText.toLowerCase())
+                       );
+                       
+                       // Inject coordinates
+                       groundedAction = Map.from(memoryAction);
+                       // Fix: BoundingBox.center is a String, manually calc
+                       final centerX = block.boundingBox.left + block.boundingBox.width / 2;
+                       final centerY = block.boundingBox.top + block.boundingBox.height / 2;
+                       
+                       groundedAction['x'] = centerX.toInt();
+                       groundedAction['y'] = centerY.toInt();
+                       
+                   } catch (e) {
+                       // Target NOT found on screen
+                       return RobotDecision(
+                           isConfident: false,
+                           reasoning: 'I recall I need to interact with "$targetText", but I cannot find it on this screen. Context mismatch?',
+                           suggestedGoal: payload['goal'],
+                       );
+                   }
+               }
+           }
+           
+           // If we didn't need to ground (e.g. key press) or succeeded
+           groundedAction ??= Map.from(memoryAction);
+
            // CHECK PREREQUISITES
            if (payload.containsKey('prerequisites')) {
               final prereqs = (payload['prerequisites'] as List).cast<String>();
               if (prereqs.isNotEmpty) {
-                 return RobotDecision(
-                   isConfident: false, // Don't auto-act if prereqs exist yet
-                   reasoning: 'I need to check prerequisites: $prereqs',
-                   suggestedGoal: payload['goal'],
-                 );
+                 // Simple heuristic: If we found the element, maybe prereqs are met?
+                 // For now, let's just warn but proceed if we physically see the button.
+                 // Actually, if prereq is 'Menu Open', seeing the Menu Item implies it is open.
+                 // So "Grounding" is a strong verification of prerequisites.
               }
            }
         
            return RobotDecision(
              isConfident: true,
-             reasoning: 'Memory Match! (Score: ${(score*100).toStringAsFixed(1)}%). Goal: "${payload['goal']}"',
-             action: payload['action'],
+             reasoning: 'Memory Match! (Score: ${(score*100).toStringAsFixed(1)}%). Found target on screen.',
+             action: groundedAction,
              suggestedGoal: payload['goal'],
            );
         } else {

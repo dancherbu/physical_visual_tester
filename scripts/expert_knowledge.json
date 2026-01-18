@@ -341,5 +341,36 @@
                 "fact": "Quits the application."
             }
         ]
+    },
+    {
+        "description": "Generic UI action reference for task decomposition matching.",
+        "prerequisites": [],
+        "actions": [
+            {"goal": "Click Start", "action": {"type": "click", "target_text": "Start"}, "fact": "Open Start menu."},
+            {"goal": "Click Start Button", "action": {"type": "click", "target_text": "Start"}, "fact": "Open Start menu."},
+            {"goal": "Click Search", "action": {"type": "click", "target_text": "Search"}, "fact": "Focus search bar."},
+            {"goal": "Click Search button", "action": {"type": "click", "target_text": "Search"}, "fact": "Focus search bar."},
+            {"goal": "Click Microsoft Edge", "action": {"type": "click", "target_text": "Microsoft Edge"}, "fact": "Open web browser."},
+            {"goal": "Click File Explorer", "action": {"type": "click", "target_text": "File Explorer"}, "fact": "Open file manager."},
+            {"goal": "Click Minimize", "action": {"type": "click", "target_text": "Minimize"}, "fact": "Minimize window."},
+            {"goal": "Click Maximize", "action": {"type": "click", "target_text": "Maximize"}, "fact": "Maximize window."},
+            {"goal": "Click Close", "action": {"type": "click", "target_text": "Close"}, "fact": "Close window."},
+            {"goal": "Click Apply", "action": {"type": "click", "target_text": "Apply"}, "fact": "Apply changes."},
+            {"goal": "Click Yes", "action": {"type": "click", "target_text": "Yes"}, "fact": "Confirm action."},
+            {"goal": "Click No", "action": {"type": "click", "target_text": "No"}, "fact": "Decline action."},
+            {"goal": "Click Help", "action": {"type": "click", "target_text": "Help"}, "fact": "Open help."},
+            {"goal": "Click File", "action": {"type": "click", "target_text": "File"}, "fact": "Open file menu."},
+            {"goal": "Click Save", "action": {"type": "click", "target_text": "Save"}, "fact": "Save document."},
+            {"goal": "Click Save Button", "action": {"type": "click", "target_text": "Save"}, "fact": "Save document."},
+            {"goal": "Click Save As...", "action": {"type": "click", "target_text": "Save As..."}, "fact": "Save as dialog."},
+            {"goal": "Click Exit", "action": {"type": "click", "target_text": "Exit"}, "fact": "Exit app."},
+            {"goal": "Click Text Editor Area", "action": {"type": "click", "target_text": "Text Editor Area"}, "fact": "Focus editor."},
+            {"goal": "Type Text", "action": {"type": "type", "target_text": "Text Editor Area"}, "fact": "Enter text."},
+            {"goal": "Click Keyboard", "action": {"type": "type", "target_text": "Text Editor Area"}, "fact": "Begin typing."},
+            {"goal": "Press Enter", "action": {"type": "type", "target_text": "Text Editor Area"}, "fact": "Insert new line."},
+            {"goal": "Press Space", "action": {"type": "type", "target_text": "Text Editor Area"}, "fact": "Insert space."},
+            {"goal": "Click Tab", "action": {"type": "type", "target_text": "Text Editor Area"}, "fact": "Insert tab."},
+            {"goal": "Click Google Search", "action": {"type": "click", "target_text": "Google Search"}, "fact": "Submit search."}
+        ]
     }
 ]
