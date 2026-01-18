@@ -247,7 +247,8 @@ class RobotService {
        final results = <TaskStepVerification>[];
        
        for (final step in steps) {
-           final embedding = await ollamaEmbed.embed(prompt: step);
+           final normalized = await _normalizeStep(step);
+           final embedding = await ollamaEmbed.embed(prompt: normalized);
            final memories = await qdrant.search(queryEmbedding: embedding, limit: 5);
            
            bool known = false;
@@ -343,6 +344,25 @@ class RobotService {
       } catch (_) {}
 
       return null;
+  }
+
+  Future<String> _normalizeStep(String step) async {
+      final prompt = '''
+      Normalize this task step into a concise UI action query. Keep the target text if present.
+      Step: "$step"
+      Output only the normalized text.
+      Examples:
+      - "Click \"Login\" button" -> "Click Login"
+      - "Type \"hello\"" -> "Type hello"
+      - "Open Start Menu" -> "Click Start"
+      ''';
+
+      try {
+          final response = await ollama.generate(prompt: prompt, numPredict: 32);
+          final normalized = response.trim();
+          if (normalized.isNotEmpty) return normalized;
+      } catch (_) {}
+      return step;
   }
   
   // --- CONVERSATIONAL METHODS ---

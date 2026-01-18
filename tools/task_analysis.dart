@@ -13,6 +13,8 @@ Future<void> main(List<String> args) async {
   final chatModel = options['model'] ?? 'llama3.2:3b';
   final embedModel = options['embed'] ?? 'nomic-embed-text';
   final threshold = double.tryParse(options['threshold'] ?? '') ?? 0.85;
+  final noRerank = options['no-rerank'] == 'true';
+  final noNormalize = options['no-normalize'] == 'true';
 
   final taskFile = File(filePath);
   if (!taskFile.existsSync()) {
@@ -26,6 +28,7 @@ Future<void> main(List<String> args) async {
       .map((l) => l.trim().replaceAll(RegExp(r'^[\d\-\.\s]+'), ''))
       .where((l) => l.isNotEmpty)
       .toList();
+  final limit = int.tryParse(options['limit'] ?? '') ?? tasks.length;
 
   final ollama = OllamaClient(baseUrl: Uri.parse(ollamaUrl), model: chatModel);
   final embedder = OllamaClient(baseUrl: Uri.parse(ollamaUrl), model: embedModel);
@@ -35,20 +38,23 @@ Future<void> main(List<String> args) async {
   int totalSteps = 0;
   int knownSteps = 0;
 
-  for (final task in tasks) {
+  final limitedTasks = tasks.take(limit).toList();
+
+  for (final task in limitedTasks) {
     final steps = await _decomposeTask(ollama, task);
     final stepResults = <Map<String, dynamic>>[];
     bool taskKnown = true;
 
     for (final step in steps) {
       totalSteps++;
-      final embedding = await embedder.embed(prompt: step);
+      final normalized = noNormalize ? step : await _normalizeStep(ollama, step);
+      final embedding = await embedder.embed(prompt: normalized);
       final matches = await qdrant.search(queryEmbedding: embedding, limit: 5);
 
       double score = 0.0;
       Map<String, dynamic>? selected;
       if (matches.isNotEmpty) {
-        selected = await _rerankMatch(ollama, step, matches);
+        selected = noRerank ? null : await _rerankMatch(ollama, step, matches);
         final picked = selected ?? matches.first;
         score = (picked['score'] as num).toDouble();
         selected = picked;
@@ -80,7 +86,7 @@ Future<void> main(List<String> args) async {
   final summary = {
     'taskFile': filePath,
     'threshold': threshold,
-    'tasks': tasks.length,
+    'tasks': limitedTasks.length,
     'stepsTotal': totalSteps,
     'stepsKnown': knownSteps,
     'confidencePercent': confidence,
@@ -110,6 +116,25 @@ Format as JSON List of strings. Example: ["Click Chrome", "Type Google.com", "Pr
   } catch (_) {}
 
   return [instruction];
+}
+
+Future<String> _normalizeStep(OllamaClient ollama, String step) async {
+  final prompt = '''
+Normalize this task step into a concise UI action query. Keep the target text if present.
+Step: "$step"
+Output only the normalized text.
+Examples:
+- "Click \"Login\" button" -> "Click Login"
+- "Type \"hello\"" -> "Type hello"
+- "Open Start Menu" -> "Click Start"
+''';
+
+  try {
+    final response = await ollama.generate(prompt: prompt, numPredict: 32);
+    final normalized = response.trim();
+    if (normalized.isNotEmpty) return normalized;
+  } catch (_) {}
+  return step;
 }
 
 Future<Map<String, dynamic>?> _rerankMatch(

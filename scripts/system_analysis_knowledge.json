@@ -40,6 +40,14 @@
                     "command": "Get-ChildItem $HOME\\Downloads -Name | Select-Object -First 10"
                 },
                 "fact": "Lists the first 10 files in Downloads."
+            },
+            {
+                "goal": "Count files modified yesterday",
+                "action": {
+                    "type": "system_command",
+                    "command": "(Get-ChildItem $HOME\\Documents -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime.Date -eq (Get-Date).AddDays(-1).Date }).Count"
+                },
+                "fact": "Counts files in Documents (root) modified yesterday."
             }
         ]
     },

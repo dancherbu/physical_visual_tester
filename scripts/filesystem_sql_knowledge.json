@@ -1,0 +1,40 @@
+[
+    {
+        "description": "File System - Statistical Analysis (Fast SQL)",
+        "prerequisites": [],
+        "actions": [
+            {
+                "goal": "Count all files",
+                "action": {
+                    "type": "db_query",
+                    "query": "SELECT COUNT(*) as total_files FROM files"
+                },
+                "fact": "Returns total file count from local index."
+            },
+            {
+                "goal": "Count large files (>100MB)",
+                "action": {
+                    "type": "db_query",
+                    "query": "SELECT COUNT(*) as large_files FROM files WHERE size_bytes > 104857600"
+                },
+                "fact": "Counts files larger than 100MB."
+            },
+            {
+                "goal": "Count PNG images",
+                "action": {
+                    "type": "db_query",
+                    "query": "SELECT COUNT(*) as png_count FROM files WHERE extension = 'png'"
+                },
+                "fact": "Counts number of PNG files."
+            },
+            {
+                "goal": "Count files modified yesterday",
+                "action": {
+                    "type": "db_query",
+                    "query": "SELECT COUNT(*) as modified_yesterday FROM files WHERE modified_epoch >= (unixepoch('now') - 86400)*1000 AND modified_epoch < unixepoch('now')*1000"
+                },
+                "fact": "Counts files modified in the last 24 hours."
+            }
+        ]
+    }
+]

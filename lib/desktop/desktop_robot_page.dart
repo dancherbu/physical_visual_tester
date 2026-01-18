@@ -14,6 +14,7 @@ import '../hid/windows_hid_adapter.dart';
 import '../robot/robot_service.dart';
 import '../spikes/brain/ollama_client.dart';
 import '../spikes/brain/qdrant_service.dart';
+import '../spikes/filesystem_indexer.dart';
 import '../vision/ocr_models.dart';
 
 class DesktopRobotPage extends StatefulWidget {
@@ -138,6 +139,13 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
         if (Platform.isWindows) {
             _hid = WindowsNativeHidAdapter(); // Native Windows Input
             _log('✅ Initialized Windows Mouse/Keyboard Adapter.');
+            
+            // Start Indexing background
+            final home = Platform.environment['USERPROFILE']!;
+            _log('📂 Indexing Documents in background...');
+            FileSystemIndexer.indexRoots(['$home\\Documents']).then((_) {
+               _log('✅ Documents Indexing Completed.'); 
+            });
         } else {
             _log('⚠️ Native Input not supported on ${Platform.operatingSystem}');
         }
@@ -800,9 +808,28 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                     _messages.add(_DesktopChatMessage(sender: 'System', text: "Result: $output"));
                  });
              } else {
+             } else {
                  final error = result.stderr.toString().trim();
                  _log("❌ Command Failed: $error");
              }
+             
+        } else if (type == 'db_query') {
+             // SQLite Query (Fast)
+             final sql = action['query'] as String;
+             _log("🗄️ Executing SQL: $sql");
+             
+             final results = await FileSystemIndexer.runRawQuery(sql);
+             
+             final output = results.isEmpty 
+                  ? "No results." 
+                  : results.length == 1 
+                      ? results.first.toString() 
+                      : "${results.length} rows found.";
+             
+             _log("✅ DB Result: $output");
+             setState(() {
+                _messages.add(_DesktopChatMessage(sender: 'System', text: "DB Result: $output"));
+             });
         }
     } catch (e) {
         _log("❌ Execution Failed: $e");
