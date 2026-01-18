@@ -722,6 +722,29 @@ import '../hid/method_channel_hid_adapter.dart';
               await _hid.sendKeyText(text);
               await _hid.sendKeyText('\n'); // Enter usually expected
               _log("✅ Typed text.");
+              
+          } else if (type == 'keyboard_key') {
+              // Handle single keys like Enter, Tab
+              final key = (action['target_text'] as String).toLowerCase();
+              String? toSend;
+              if (key == 'enter' || key == 'return') toSend = '\n';
+              else if (key == 'tab') toSend = '\t';
+              else if (key == 'space') toSend = ' ';
+              
+              if (toSend != null) {
+                 _log("⌨️ Pressing Key: $key");
+                 await _hid.sendKeyText(toSend);
+                 _log("✅ Pressed.");
+              } else {
+                 _log("⚠️ HID: Special key '$key' not supported yet.");
+              }
+
+          } else if (type == 'keyboard_shortcut') {
+              // Handle combos like Win+R
+              final shortcut = action['target_text'] as String;
+              _log("⚠️ HID: Shortcuts '$shortcut' not supported by current Android Adapter.");
+              _log("👉 Please use Mouse interactions (Click Start) instead.");
+              
           } else if (type == 'mouse_right_click') {
                // Similar move logic if we had x,y, or just click where we are?
                // Usually for 'Context Menu' we might assume we move there first.

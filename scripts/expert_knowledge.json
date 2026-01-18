@@ -174,5 +174,172 @@
                 "fact": "Switches to the Insert tab tools."
             }
         ]
+    },
+    {
+        "description": "Windows 11 Desktop with Taskbar visible at the bottom.",
+        "prerequisites": [],
+        "actions": [
+            {
+                "goal": "Click Start",
+                "action": {
+                    "type": "click",
+                    "target_text": "Start"
+                },
+                "fact": "Opens the main application launcher and search menu."
+            },
+            {
+                "goal": "Click Search",
+                "action": {
+                    "type": "click",
+                    "target_text": "Search"
+                },
+                "fact": "Focuses the system search bar."
+            },
+            {
+                "goal": "Click Microsoft Edge",
+                "action": {
+                    "type": "click",
+                    "target_text": "Microsoft Edge"
+                },
+                "fact": "Launches the default web browser."
+            },
+            {
+                "goal": "Click File Explorer",
+                "action": {
+                    "type": "click",
+                    "target_text": "File Explorer"
+                },
+                "fact": "Opens the file manager to browse documents and drives."
+            }
+        ]
+    },
+    {
+        "description": "A standard application window (e.g. Notepad, Chrome) with title bar controls.",
+        "prerequisites": [
+            "Window is open"
+        ],
+        "actions": [
+            {
+                "goal": "Click Close",
+                "action": {
+                    "type": "click",
+                    "target_text": "Close"
+                },
+                "fact": "Closes the current window or application."
+            },
+            {
+                "goal": "Click Maximize",
+                "action": {
+                    "type": "click",
+                    "target_text": "Maximize"
+                },
+                "fact": "Expands the window to fill the monitor."
+            },
+            {
+                "goal": "Click Minimize",
+                "action": {
+                    "type": "click",
+                    "target_text": "Minimize"
+                },
+                "fact": "Hides the window to the taskbar."
+            }
+        ]
+    },
+    {
+        "description": "Common Dialog Box prompts expecting user confirmation.",
+        "prerequisites": [
+            "Dialog is visible"
+        ],
+        "actions": [
+            {
+                "goal": "Click Apply",
+                "action": {
+                    "type": "click",
+                    "target_text": "Apply"
+                },
+                "fact": "Applies the selected changes without closing the dialog."
+            },
+            {
+                "goal": "Click Yes",
+                "action": {
+                    "type": "click",
+                    "target_text": "Yes"
+                },
+                "fact": "Confirms a prompt or proceeds with an action."
+            },
+            {
+                "goal": "Click No",
+                "action": {
+                    "type": "click",
+                    "target_text": "No"
+                },
+                "fact": "Declines or cancels the prompt."
+            },
+            {
+                "goal": "Click Help",
+                "action": {
+                    "type": "click",
+                    "target_text": "Help"
+                },
+                "fact": "Opens documentation or assistance."
+            }
+        ]
+    },
+    {
+        "description": "Notepad Application - Empty Text File",
+        "prerequisites": [
+            "App: Notepad"
+        ],
+        "actions": [
+            {
+                "goal": "Click Text Editor Area",
+                "action": {
+                    "type": "click",
+                    "target_text": "Text Editor Area"
+                },
+                "fact": "Focuses the typing caret in the document."
+            },
+            {
+                "goal": "Click File",
+                "action": {
+                    "type": "click",
+                    "target_text": "File"
+                },
+                "fact": "Opens the File menu to access Save options."
+            },
+            {
+                "goal": "Click Save",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save"
+                },
+                "fact": "Saves the current document."
+            }
+        ]
+    },
+    {
+        "description": "Notepad 'File' Menu is open.",
+        "prerequisites": [
+            "App: Notepad",
+            "Menu: File"
+        ],
+        "actions": [
+            {
+                "goal": "Click Save As...",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save As..."
+                },
+                "fact": "Opens dialog to save file with a specific name."
+            },
+            {
+                "goal": "Click Exit",
+                "action": {
+                    "type": "click",
+                    "target_text": "Exit"
+                },
+                "fact": "Quits the application."
+            }
+        ]
     }
 ]

@@ -1,0 +1,138 @@
+[
+    {
+        "description": "Windows Global Keyboard Shortcuts",
+        "prerequisites": [
+            "None"
+        ],
+        "actions": [
+            {
+                "goal": "Open Run Dialog",
+                "action": {
+                    "type": "keyboard_shortcut",
+                    "target_text": "Win+R"
+                },
+                "fact": "Opens the 'Run' command window."
+            },
+            {
+                "goal": "Open File Explorer",
+                "action": {
+                    "type": "keyboard_shortcut",
+                    "target_text": "Win+E"
+                },
+                "fact": "Quickly launches File Explorer."
+            },
+            {
+                "goal": "Show Desktop",
+                "action": {
+                    "type": "keyboard_shortcut",
+                    "target_text": "Win+D"
+                },
+                "fact": "Minimizes all windows to show the desktop."
+            },
+            {
+                "goal": "Open Settings",
+                "action": {
+                    "type": "keyboard_shortcut",
+                    "target_text": "Win+I"
+                },
+                "fact": "Opens Windows Settings app."
+            },
+            {
+                "goal": "Lock PC",
+                "action": {
+                    "type": "keyboard_shortcut",
+                    "target_text": "Win+L"
+                },
+                "fact": "Locks the computer."
+            },
+            {
+                "goal": "Open Start Menu",
+                "action": {
+                    "type": "keyboard_key",
+                    "target_text": "Win"
+                },
+                "fact": "Opens the Start Menu."
+            }
+        ]
+    },
+    {
+        "description": "Run Dialog Interactions (Win+R)",
+        "prerequisites": [
+            "Run Dialog Open"
+        ],
+        "actions": [
+            {
+                "goal": "Launch Notepad",
+                "action": {
+                    "type": "keyboard_type",
+                    "target_text": "notepad"
+                },
+                "fact": "Command to launch text editor."
+            },
+            {
+                "goal": "Launch Command Prompt",
+                "action": {
+                    "type": "keyboard_type",
+                    "target_text": "cmd"
+                },
+                "fact": "Command to launch terminal."
+            },
+            {
+                "goal": "Launch Calculator",
+                "action": {
+                    "type": "keyboard_type",
+                    "target_text": "calc"
+                },
+                "fact": "Command to launch calculator."
+            },
+            {
+                "goal": "Launch Chrome",
+                "action": {
+                    "type": "keyboard_type",
+                    "target_text": "chrome"
+                },
+                "fact": "Command to launch Google Chrome."
+            },
+            {
+                "goal": "Launch Edge",
+                "action": {
+                    "type": "keyboard_type",
+                    "target_text": "msedge"
+                },
+                "fact": "Command to launch Microsoft Edge."
+            },
+            {
+                "goal": "Confirm Run",
+                "action": {
+                    "type": "keyboard_key",
+                    "target_text": "Enter"
+                },
+                "fact": "Executes the typed command."
+            }
+        ]
+    },
+    {
+        "description": "Start Menu Search Workflow",
+        "prerequisites": [
+            "Start Menu Open"
+        ],
+        "actions": [
+            {
+                "goal": "Search for App",
+                "action": {
+                    "type": "keyboard_type",
+                    "target_text": "App Name"
+                },
+                "fact": "Typing immediately searches installed apps."
+            },
+            {
+                "goal": "Launch Selected App",
+                "action": {
+                    "type": "keyboard_key",
+                    "target_text": "Enter"
+                },
+                "fact": "Opens the best match from search."
+            }
+        ]
+    }
+]
