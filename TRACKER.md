@@ -94,6 +94,24 @@ The Robot runs a continuous loop:
 - [ ] **Curiosity Mode (Exploration):**
     - [ ] (Future) Robot clicks unknown buttons in safe environment to learn.
 
+### Phase 2.2: Windows Desktop Companion (Exploration)
+**Goal:** Provide a Windows desktop UI that can see real screens, use mock screens, and share the same chat-based teaching/learning loop.
+- [ ] **App Shell & UI Parity:**
+    - [ ] Create Windows desktop app shell with Robot view, status logs, and chat overlay.
+    - [ ] Support image previews in chat ("What is this?") just like mobile.
+- [ ] **Screen Sources:**
+    - [ ] Live screen capture from Windows desktop.
+    - [ ] Mock screen source (reuse existing mock assets).
+- [ ] **Robot Loop Integration:**
+    - [ ] Wire to existing Observe -> Recall -> Act loop.
+    - [ ] Teach/confirm flow writes to Qdrant same as mobile.
+- [ ] **Task Execution:**
+    - [ ] Load task lists and execute using existing plan logic.
+    - [ ] Chat command: "Do task X" with summary responses.
+- [ ] **Local Services Connectivity:**
+    - [ ] Direct Windows networking to Ollama/Qdrant (Docker) with health checks.
+    - [ ] Config for endpoints per environment.
+
 ### Phase 3: Hardware Reality
 **Goal:** Move from Mocks to Real HDMI Input.
 - [ ] **HDMI Capture Integration:**
@@ -104,3 +122,4 @@ The Robot runs a continuous loop:
 1.  - [x] **Rewrite Key Components:** Logic moved from `VisionSpikePage` to `RobotTester`; Legacy OCR loop (`EyeActionsLogView`) disabled.
 2.  **Implement Teach Dialog:** Ensure user can effectively unblock the robot.
 3.  **Memory Injection:** Verify Ollama/Qdrant are correctly saving/retrieving instructions.
+4.  **Desktop Companion Exploration:** Define scope for Windows desktop app and start shell + screen capture.

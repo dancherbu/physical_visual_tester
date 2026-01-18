@@ -1,0 +1,379 @@
+[
+    {
+        "description": "Browser Main Toolbar & Navigation (Chrome/Edge/Firefox)",
+        "prerequisites": [
+            "App: Browser"
+        ],
+        "actions": [
+            {
+                "goal": "Go Back",
+                "action": {
+                    "type": "click",
+                    "target_text": "Back"
+                },
+                "fact": "Navigates to the previous page in history."
+            },
+            {
+                "goal": "Go Forward",
+                "action": {
+                    "type": "click",
+                    "target_text": "Forward"
+                },
+                "fact": "Navigates to the next page in history."
+            },
+            {
+                "goal": "Reload Page",
+                "action": {
+                    "type": "click",
+                    "target_text": "Reload"
+                },
+                "fact": "Refreshes the current page."
+            },
+            {
+                "goal": "Refresh Page",
+                "action": {
+                    "type": "click",
+                    "target_text": "Refresh"
+                },
+                "fact": "Refreshes the current page."
+            },
+            {
+                "goal": "Stop Loading",
+                "action": {
+                    "type": "click",
+                    "target_text": "Stop"
+                },
+                "fact": "Cancels the loading of the current page."
+            },
+            {
+                "goal": "Go Home",
+                "action": {
+                    "type": "click",
+                    "target_text": "Home"
+                },
+                "fact": "Navigates to the configured homepage."
+            },
+            {
+                "goal": "Enter URL / Search",
+                "action": {
+                    "type": "click",
+                    "target_text": "Address Bar"
+                },
+                "fact": "Focuses the omnibox to type a website address or search query."
+            },
+            {
+                "goal": "Bookmark Page",
+                "action": {
+                    "type": "click",
+                    "target_text": "Star"
+                },
+                "fact": "Saves the current URL to bookmarks."
+            },
+            {
+                "goal": "View Site Info",
+                "action": {
+                    "type": "click",
+                    "target_text": "Site Information"
+                },
+                "fact": "Shows security details and permissions (lock icon)."
+            }
+        ]
+    },
+    {
+        "description": "Browser Tab Management",
+        "prerequisites": [
+            "App: Browser"
+        ],
+        "actions": [
+            {
+                "goal": "New Tab",
+                "action": {
+                    "type": "click",
+                    "target_text": "New Tab"
+                },
+                "fact": "Opens a fresh tab (usually + icon)."
+            },
+            {
+                "goal": "Close Tab",
+                "action": {
+                    "type": "click",
+                    "target_text": "Close Tab"
+                },
+                "fact": "Closes the specific tab (x icon)."
+            },
+            {
+                "goal": "Close Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "Close"
+                },
+                "fact": "Closes the entire browser window."
+            },
+            {
+                "goal": "Reopen Limit",
+                "action": {
+                    "type": "shortcut",
+                    "target_text": "Ctrl+Shift+T"
+                },
+                "fact": "Restores the most recently closed tab."
+            }
+        ]
+    },
+    {
+        "description": "Browser Main Menu (Three Dots / Hamburger Menu)",
+        "prerequisites": [
+            "App: Browser",
+            "Menu: Main"
+        ],
+        "actions": [
+            {
+                "goal": "New Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "New window"
+                },
+                "fact": "Opens a new browser window."
+            },
+            {
+                "goal": "New Incognito Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "New Incognito window"
+                },
+                "fact": "Opens a private browsing session."
+            },
+            {
+                "goal": "Private Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "New Private window"
+                },
+                "fact": "Opens a private browsing session (Firefox)."
+            },
+            {
+                "goal": "Show History",
+                "action": {
+                    "type": "click",
+                    "target_text": "History"
+                },
+                "fact": "Displays list of previously visited sites."
+            },
+            {
+                "goal": "Show Downloads",
+                "action": {
+                    "type": "click",
+                    "target_text": "Downloads"
+                },
+                "fact": "Opens the list of downloaded files."
+            },
+            {
+                "goal": "Show Bookmarks",
+                "action": {
+                    "type": "click",
+                    "target_text": "Bookmarks"
+                },
+                "fact": "Manage saved websites."
+            },
+            {
+                "goal": "Zoom In",
+                "action": {
+                    "type": "click",
+                    "target_text": "+"
+                },
+                "fact": "Increases page magnification."
+            },
+            {
+                "goal": "Zoom Out",
+                "action": {
+                    "type": "click",
+                    "target_text": "-"
+                },
+                "fact": "Decreases page magnification."
+            },
+            {
+                "goal": "Print Page",
+                "action": {
+                    "type": "click",
+                    "target_text": "Print"
+                },
+                "fact": "Opens the print preview dialog."
+            },
+            {
+                "goal": "Find in Page",
+                "action": {
+                    "type": "click",
+                    "target_text": "Find"
+                },
+                "fact": "Highligts text on the current page."
+            },
+            {
+                "goal": "More Tools",
+                "action": {
+                    "type": "click",
+                    "target_text": "More tools"
+                },
+                "fact": "Access extensions and developer tools."
+            },
+            {
+                "goal": "Settings",
+                "action": {
+                    "type": "click",
+                    "target_text": "Settings"
+                },
+                "fact": "Opens browser configuration."
+            },
+            {
+                "goal": "Options",
+                "action": {
+                    "type": "click",
+                    "target_text": "Options"
+                },
+                "fact": "Opens browser configuration (Firefox)."
+            },
+            {
+                "goal": "Help",
+                "action": {
+                    "type": "click",
+                    "target_text": "Help"
+                },
+                "fact": "Access support and about info."
+            },
+            {
+                "goal": "Exit Browser",
+                "action": {
+                    "type": "click",
+                    "target_text": "Exit"
+                },
+                "fact": "Closes all windows and tabs."
+            }
+        ]
+    },
+    {
+        "description": "Web Forms and Interactions",
+        "prerequisites": [
+            "Webpage Loaded"
+        ],
+        "actions": [
+            {
+                "goal": "Type in Field",
+                "action": {
+                    "type": "click",
+                    "target_text": "Input Field"
+                },
+                "fact": "Focuses a text box to allow typing."
+            },
+            {
+                "goal": "Select Checkbox",
+                "action": {
+                    "type": "click",
+                    "target_text": "Checkbox"
+                },
+                "fact": "Toggles an option on or off."
+            },
+            {
+                "goal": "Select Radio Button",
+                "action": {
+                    "type": "click",
+                    "target_text": "Radio"
+                },
+                "fact": "Selects one option from a group."
+            },
+            {
+                "goal": "Open Dropdown",
+                "action": {
+                    "type": "click",
+                    "target_text": "Dropdown"
+                },
+                "fact": "Expands a list of choices."
+            },
+            {
+                "goal": "Submit Form",
+                "action": {
+                    "type": "click",
+                    "target_text": "Submit"
+                },
+                "fact": "Sends the data to the server."
+            },
+            {
+                "goal": "Search Site",
+                "action": {
+                    "type": "click",
+                    "target_text": "Search"
+                },
+                "fact": "Initiates a search on the website."
+            },
+            {
+                "goal": "Log In",
+                "action": {
+                    "type": "click",
+                    "target_text": "Log In"
+                },
+                "fact": "Authenticates user."
+            },
+            {
+                "goal": "Sign Up",
+                "action": {
+                    "type": "click",
+                    "target_text": "Sign Up"
+                },
+                "fact": "Registers new user."
+            }
+        ]
+    },
+    {
+        "description": "Browser Dialogs and Permissions",
+        "prerequisites": [
+            "Popup Visible"
+        ],
+        "actions": [
+            {
+                "goal": "Allow Permission",
+                "action": {
+                    "type": "click",
+                    "target_text": "Allow"
+                },
+                "fact": "Grants site access to camera/mic/location."
+            },
+            {
+                "goal": "Block Permission",
+                "action": {
+                    "type": "click",
+                    "target_text": "Block"
+                },
+                "fact": "Denies site access to resources."
+            },
+            {
+                "goal": "Confirm Alert",
+                "action": {
+                    "type": "click",
+                    "target_text": "OK"
+                },
+                "fact": "Dismisses the JavaScript alert."
+            },
+            {
+                "goal": "Cancel Alert",
+                "action": {
+                    "type": "click",
+                    "target_text": "Cancel"
+                },
+                "fact": "Cancels the confirmation dialog."
+            },
+            {
+                "goal": "Save Password",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save"
+                },
+                "fact": "Stores credentials in the browser password manager."
+            },
+            {
+                "goal": "Never Save",
+                "action": {
+                    "type": "click",
+                    "target_text": "Never"
+                },
+                "fact": "Declines saving credentials."
+            }
+        ]
+    }
+]

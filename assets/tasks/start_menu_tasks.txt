@@ -1,3 +1,4 @@
-1. Click "Search" bar
-2. Type "Calculator"
-3. Click "Calculator App"
+1. Click "Start"
+2. Click "Search"
+3. Click "File Explorer"
+4. Click "Microsoft Edge"

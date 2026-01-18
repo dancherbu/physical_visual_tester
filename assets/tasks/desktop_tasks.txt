@@ -1,6 +1,7 @@
-1. Double Click "Recycle Bin"
-2. Click "Empty Recycle Bin"
-3. Close Window
-4. Open Start Menu
-5. Type "Notepad"
-6. Press Enter
+1. Click "Start"
+2. Click "Search"
+3. Click "Microsoft Edge"
+4. Click "File Explorer"
+5. Click "Minimize"
+6. Click "Maximize"
+7. Click "Close"

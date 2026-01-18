@@ -128,10 +128,11 @@ class RobotService {
     required Map<String, dynamic> action,
     List<String> prerequisites = const [],
     String? factualDescription,
+    String? overrideDescription, // [NEW] For offline/mock training
   }) async {
     // 1. Create the detailed description
-    final description = state.toLLMDescription();
-    final prompt = 'Goal: $goal. Screen: $description';
+    final description = overrideDescription ?? state.toLLMDescription();
+    final prompt = 'Goal: $goal. Screen: $description. Prerequisites: $prerequisites';
 
     // 2. Embed
     final embedding = await ollamaEmbed.embed(prompt: prompt);

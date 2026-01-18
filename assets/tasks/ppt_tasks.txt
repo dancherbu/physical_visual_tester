@@ -1,5 +1,2 @@
-1. Click "New Presentation"
-2. Wait for editor
-3. Click "Insert" tab
-4. Click "Picture"
-5. Select "From Device"
+1. Click "New Slide"
+2. Click "Slide Show"

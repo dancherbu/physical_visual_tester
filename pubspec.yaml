@@ -35,11 +35,13 @@ dependencies:
   google_mlkit_text_recognition: ^0.15.0
   http: ^1.2.2
   meta: ^1.11.0
+  screen_capturer: ^0.2.0
+  image: ^4.2.0
+  file_picker: ^8.1.2
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  opencv_dart: ^2.1.0
   flutter_bloc: ^9.1.1
   image_picker: ^1.0.4
 

@@ -1,0 +1,804 @@
+[
+    {
+        "description": "Notepad - Main Menu Bar",
+        "prerequisites": [
+            "App: Notepad"
+        ],
+        "actions": [
+            {
+                "goal": "New File",
+                "action": {
+                    "type": "click",
+                    "target_text": "New"
+                },
+                "fact": "Creates a new blank text document."
+            },
+            {
+                "goal": "New Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "New Window"
+                },
+                "fact": "Opens a separate instance of Notepad."
+            },
+            {
+                "goal": "Open File",
+                "action": {
+                    "type": "click",
+                    "target_text": "Open"
+                },
+                "fact": "Loads a text file from disk."
+            },
+            {
+                "goal": "Save File",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save"
+                },
+                "fact": "Saves changes to the current file."
+            },
+            {
+                "goal": "Save As",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save As"
+                },
+                "fact": "Saves the current file with a new filename."
+            },
+            {
+                "goal": "Page Setup",
+                "action": {
+                    "type": "click",
+                    "target_text": "Page Setup"
+                },
+                "fact": "Configures print margins and orientation."
+            },
+            {
+                "goal": "Print File",
+                "action": {
+                    "type": "click",
+                    "target_text": "Print"
+                },
+                "fact": "Sends document to the printer."
+            },
+            {
+                "goal": "Exit Notepad",
+                "action": {
+                    "type": "click",
+                    "target_text": "Exit"
+                },
+                "fact": "Closes the application."
+            }
+        ]
+    },
+    {
+        "description": "Notepad - Edit Menu",
+        "prerequisites": [
+            "App: Notepad"
+        ],
+        "actions": [
+            {
+                "goal": "Undo Typing",
+                "action": {
+                    "type": "click",
+                    "target_text": "Undo"
+                },
+                "fact": "Reverses the last action."
+            },
+            {
+                "goal": "Cut Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Cut"
+                },
+                "fact": "Moves selected text to clipboard."
+            },
+            {
+                "goal": "Copy Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Copy"
+                },
+                "fact": "Copies selected text to clipboard."
+            },
+            {
+                "goal": "Paste Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Paste"
+                },
+                "fact": "Inserts text from clipboard."
+            },
+            {
+                "goal": "Delete Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Delete"
+                },
+                "fact": "Removes selected text."
+            },
+            {
+                "goal": "Find Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Find"
+                },
+                "fact": "Searches for a string in the document."
+            },
+            {
+                "goal": "Find Next",
+                "action": {
+                    "type": "click",
+                    "target_text": "Find Next"
+                },
+                "fact": "Jumps to the next occurrence of search term."
+            },
+            {
+                "goal": "Replace Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Replace"
+                },
+                "fact": "Finds and replaces specific text."
+            },
+            {
+                "goal": "Go To Line",
+                "action": {
+                    "type": "click",
+                    "target_text": "Go To"
+                },
+                "fact": "Jumps cursor to a specific line number."
+            },
+            {
+                "goal": "Select All",
+                "action": {
+                    "type": "click",
+                    "target_text": "Select All"
+                },
+                "fact": "Highlights the entire document."
+            },
+            {
+                "goal": "Insert Time/Date",
+                "action": {
+                    "type": "click",
+                    "target_text": "Time/Date"
+                },
+                "fact": "Inserts current timestamp at cursor."
+            }
+        ]
+    },
+    {
+        "description": "Notepad - Format & View Menus",
+        "prerequisites": [
+            "App: Notepad"
+        ],
+        "actions": [
+            {
+                "goal": "Toggle Word Wrap",
+                "action": {
+                    "type": "click",
+                    "target_text": "Word Wrap"
+                },
+                "fact": "Breaks long lines to fit usage window."
+            },
+            {
+                "goal": "Change Font",
+                "action": {
+                    "type": "click",
+                    "target_text": "Font"
+                },
+                "fact": "Opens font selection dialog."
+            },
+            {
+                "goal": "Zoom In",
+                "action": {
+                    "type": "click",
+                    "target_text": "Zoom In"
+                },
+                "fact": "Increases text size view."
+            },
+            {
+                "goal": "Zoom Out",
+                "action": {
+                    "type": "click",
+                    "target_text": "Zoom Out"
+                },
+                "fact": "Decreases text size view."
+            },
+            {
+                "goal": "Status Bar",
+                "action": {
+                    "type": "click",
+                    "target_text": "Status Bar"
+                },
+                "fact": "Toggles visibility of the bottom info bar."
+            }
+        ]
+    },
+    {
+        "description": "Notepad - Tabs and Workspace",
+        "prerequisites": [
+            "App: Notepad"
+        ],
+        "actions": [
+            {
+                "goal": "New Tab",
+                "action": {
+                    "type": "click",
+                    "target_text": "+"
+                },
+                "fact": "Opens a new text document in a new tab."
+            },
+            {
+                "goal": "Close Tab",
+                "action": {
+                    "type": "click",
+                    "target_text": "x"
+                },
+                "fact": "Closes the specific document tab. May prompt to save if modified."
+            },
+            {
+                "goal": "Save All",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save All"
+                },
+                "fact": "Saves all open tabs."
+            },
+            {
+                "goal": "Identifier: Tab Name",
+                "action": {
+                    "type": "observe",
+                    "target_text": "*.txt"
+                },
+                "fact": "The text displayed on the tab represents the filename."
+            },
+            {
+                "goal": "Identifier: Modified Indicator",
+                "action": {
+                    "type": "observe",
+                    "target_text": "*"
+                },
+                "fact": "An asterisk (*) or circle next to the filename indicates unsaved changes."
+            }
+        ]
+    },
+    {
+        "description": "General PC Interactions",
+        "prerequisites": [
+            "Any"
+        ],
+        "actions": [
+            {
+                "goal": "Type Text",
+                "action": {
+                    "type": "keyboard_type",
+                    "target_text": "Text Input"
+                },
+                "fact": "Enters characters into the active field."
+            },
+            {
+                "goal": "Press Enter",
+                "action": {
+                    "type": "keyboard_key",
+                    "target_text": "Enter"
+                },
+                "fact": "Submits form or creates new line."
+            },
+            {
+                "goal": "Right Click",
+                "action": {
+                    "type": "mouse_right_click",
+                    "target_text": "Target"
+                },
+                "fact": "Opens context menu."
+            },
+            {
+                "goal": "Move Mouse",
+                "action": {
+                    "type": "mouse_move",
+                    "target_text": "Location"
+                },
+                "fact": "Repositions cursor without clicking."
+            }
+        ]
+    },
+    {
+        "description": "Microsoft Word - Home Tab (Ribbon)",
+        "prerequisites": [
+            "App: Microsoft Word",
+            "Tab: Home"
+        ],
+        "actions": [
+            {
+                "goal": "Paste Content",
+                "action": {
+                    "type": "click",
+                    "target_text": "Paste"
+                },
+                "fact": "Inserts content from clipboard."
+            },
+            {
+                "goal": "Cut content",
+                "action": {
+                    "type": "click",
+                    "target_text": "Cut"
+                },
+                "fact": "Moves content to clipboard."
+            },
+            {
+                "goal": "Copy content",
+                "action": {
+                    "type": "click",
+                    "target_text": "Copy"
+                },
+                "fact": "Duplicates content to clipboard."
+            },
+            {
+                "goal": "Format Painter",
+                "action": {
+                    "type": "click",
+                    "target_text": "Format Painter"
+                },
+                "fact": "Copies formatting from one place to another."
+            },
+            {
+                "goal": "Bold Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Bold"
+                },
+                "fact": "Toggles bold styling."
+            },
+            {
+                "goal": "Italicize Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Italic"
+                },
+                "fact": "Toggles italic styling."
+            },
+            {
+                "goal": "Underline Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Underline"
+                },
+                "fact": "Toggles underline."
+            },
+            {
+                "goal": "Strikethrough",
+                "action": {
+                    "type": "click",
+                    "target_text": "Strikethrough"
+                },
+                "fact": "Draws a line through text."
+            },
+            {
+                "goal": "Subscript",
+                "action": {
+                    "type": "click",
+                    "target_text": "Subscript"
+                },
+                "fact": "Makes text small and below baseline."
+            },
+            {
+                "goal": "Superscript",
+                "action": {
+                    "type": "click",
+                    "target_text": "Superscript"
+                },
+                "fact": "Makes text small and above baseline."
+            },
+            {
+                "goal": "Text Effects",
+                "action": {
+                    "type": "click",
+                    "target_text": "Text Effects"
+                },
+                "fact": "Applies visual flair like shadow or glow."
+            },
+            {
+                "goal": "Highlight Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Text Highlight Color"
+                },
+                "fact": "Adds background color to text."
+            },
+            {
+                "goal": "Font Color",
+                "action": {
+                    "type": "click",
+                    "target_text": "Font Color"
+                },
+                "fact": "Changes the color of the text."
+            },
+            {
+                "goal": "Bulleted List",
+                "action": {
+                    "type": "click",
+                    "target_text": "Bullets"
+                },
+                "fact": "Starts a bulleted list."
+            },
+            {
+                "goal": "Numbered List",
+                "action": {
+                    "type": "click",
+                    "target_text": "Numbering"
+                },
+                "fact": "Starts a numbered list."
+            },
+            {
+                "goal": "Align Left",
+                "action": {
+                    "type": "click",
+                    "target_text": "Align Left"
+                },
+                "fact": "Aligns paragraph to left margin."
+            },
+            {
+                "goal": "Center Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Center"
+                },
+                "fact": "Centers paragraph."
+            },
+            {
+                "goal": "Align Right",
+                "action": {
+                    "type": "click",
+                    "target_text": "Align Right"
+                },
+                "fact": "Aligns paragraph to right margin."
+            },
+            {
+                "goal": "Justify Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Justify"
+                },
+                "fact": "Aligns text to both left and right margins."
+            }
+        ]
+    },
+    {
+        "description": "Microsoft Word - Insert Tab",
+        "prerequisites": [
+            "App: Microsoft Word",
+            "Tab: Insert"
+        ],
+        "actions": [
+            {
+                "goal": "Insert Cover Page",
+                "action": {
+                    "type": "click",
+                    "target_text": "Cover Page"
+                },
+                "fact": "Adds a pre-designed first page."
+            },
+            {
+                "goal": "Blank Page",
+                "action": {
+                    "type": "click",
+                    "target_text": "Blank Page"
+                },
+                "fact": "Inserts a new empty page."
+            },
+            {
+                "goal": "Page Break",
+                "action": {
+                    "type": "click",
+                    "target_text": "Page Break"
+                },
+                "fact": "Ends current page and moves to next."
+            },
+            {
+                "goal": "Insert Table",
+                "action": {
+                    "type": "click",
+                    "target_text": "Table"
+                },
+                "fact": "Creates a grid for data."
+            },
+            {
+                "goal": "Insert Picture",
+                "action": {
+                    "type": "click",
+                    "target_text": "Pictures"
+                },
+                "fact": "Inserts image from file."
+            },
+            {
+                "goal": "Insert Shapes",
+                "action": {
+                    "type": "click",
+                    "target_text": "Shapes"
+                },
+                "fact": "Draws geometric shapes."
+            },
+            {
+                "goal": "Insert Icons",
+                "action": {
+                    "type": "click",
+                    "target_text": "Icons"
+                },
+                "fact": "Inserts a stock icon."
+            },
+            {
+                "goal": "Insert Chart",
+                "action": {
+                    "type": "click",
+                    "target_text": "Chart"
+                },
+                "fact": "Creates a data visualization graph."
+            },
+            {
+                "goal": "Screenshot",
+                "action": {
+                    "type": "click",
+                    "target_text": "Screenshot"
+                },
+                "fact": "Inserts capture of open windows."
+            },
+            {
+                "goal": "Add Hyperlink",
+                "action": {
+                    "type": "click",
+                    "target_text": "Link"
+                },
+                "fact": "Creates a clickable link to a webpage or file."
+            },
+            {
+                "goal": "Bookmark",
+                "action": {
+                    "type": "click",
+                    "target_text": "Bookmark"
+                },
+                "fact": "Marks a location in the document."
+            },
+            {
+                "goal": "Cross-reference",
+                "action": {
+                    "type": "click",
+                    "target_text": "Cross-reference"
+                },
+                "fact": "Refers to items like headings or figures."
+            },
+            {
+                "goal": "Add Comment",
+                "action": {
+                    "type": "click",
+                    "target_text": "Comment"
+                },
+                "fact": "Adds a note to the selection."
+            },
+            {
+                "goal": "Header",
+                "action": {
+                    "type": "click",
+                    "target_text": "Header"
+                },
+                "fact": "Edits the top margin area."
+            },
+            {
+                "goal": "Footer",
+                "action": {
+                    "type": "click",
+                    "target_text": "Footer"
+                },
+                "fact": "Edits the bottom margin area."
+            },
+            {
+                "goal": "Page Number",
+                "action": {
+                    "type": "click",
+                    "target_text": "Page Number"
+                },
+                "fact": "Adds automatic numbering."
+            },
+            {
+                "goal": "Text Box",
+                "action": {
+                    "type": "click",
+                    "target_text": "Text Box"
+                },
+                "fact": "Inserts a movable box for text."
+            },
+            {
+                "goal": "WordArt",
+                "action": {
+                    "type": "click",
+                    "target_text": "WordArt"
+                },
+                "fact": "Inserts decorative text."
+            }
+        ]
+    },
+    {
+        "description": "Microsoft Word - Layout & Review",
+        "prerequisites": [
+            "App: Microsoft Word"
+        ],
+        "actions": [
+            {
+                "goal": "Change Margins",
+                "action": {
+                    "type": "click",
+                    "target_text": "Margins"
+                },
+                "fact": "Adjusts page edge distance."
+            },
+            {
+                "goal": "Orientation",
+                "action": {
+                    "type": "click",
+                    "target_text": "Orientation"
+                },
+                "fact": "Switches between Portrait and Landscape."
+            },
+            {
+                "goal": "Paper Size",
+                "action": {
+                    "type": "click",
+                    "target_text": "Size"
+                },
+                "fact": "Selects paper dimensions (A4, Letter)."
+            },
+            {
+                "goal": "Columns",
+                "action": {
+                    "type": "click",
+                    "target_text": "Columns"
+                },
+                "fact": "Splits text into multiple columns."
+            },
+            {
+                "goal": "Check Spelling",
+                "action": {
+                    "type": "click",
+                    "target_text": "Spelling & Grammar"
+                },
+                "fact": "Scans document for errors."
+            },
+            {
+                "goal": "Thesaurus",
+                "action": {
+                    "type": "click",
+                    "target_text": "Thesaurus"
+                },
+                "fact": "Finds synonyms for selected word."
+            },
+            {
+                "goal": "Word Count",
+                "action": {
+                    "type": "click",
+                    "target_text": "Word Count"
+                },
+                "fact": "Shows statistics about the document."
+            },
+            {
+                "goal": "Track Changes",
+                "action": {
+                    "type": "click",
+                    "target_text": "Track Changes"
+                },
+                "fact": "Monitors all edits made to the file."
+            },
+            {
+                "goal": "Accept Change",
+                "action": {
+                    "type": "click",
+                    "target_text": "Accept"
+                },
+                "fact": "Keeps the tracked edit."
+            },
+            {
+                "goal": "Reject Change",
+                "action": {
+                    "type": "click",
+                    "target_text": "Reject"
+                },
+                "fact": "Discards the tracked edit."
+            }
+        ]
+    },
+    {
+        "description": "Microsoft Word - File Menu (Backstage View)",
+        "prerequisites": [
+            "App: Microsoft Word"
+        ],
+        "actions": [
+            {
+                "goal": "Create Document",
+                "action": {
+                    "type": "click",
+                    "target_text": "New"
+                },
+                "fact": "Starts a new document."
+            },
+            {
+                "goal": "Open Document",
+                "action": {
+                    "type": "click",
+                    "target_text": "Open"
+                },
+                "fact": "Loads an existing file."
+            },
+            {
+                "goal": "Info",
+                "action": {
+                    "type": "click",
+                    "target_text": "Info"
+                },
+                "fact": "Shows document properties."
+            },
+            {
+                "goal": "Save Document",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save"
+                },
+                "fact": "Saves changes."
+            },
+            {
+                "goal": "Save Copy",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save As"
+                },
+                "fact": "Saves to a new file or location."
+            },
+            {
+                "goal": "Print Document",
+                "action": {
+                    "type": "click",
+                    "target_text": "Print"
+                },
+                "fact": "Send to printer."
+            },
+            {
+                "goal": "Share Document",
+                "action": {
+                    "type": "click",
+                    "target_text": "Share"
+                },
+                "fact": "Invites others to edit."
+            },
+            {
+                "goal": "Export PDF",
+                "action": {
+                    "type": "click",
+                    "target_text": "Export"
+                },
+                "fact": "Converts document to PDF/XPS."
+            },
+            {
+                "goal": "Close Document",
+                "action": {
+                    "type": "click",
+                    "target_text": "Close"
+                },
+                "fact": "Closes the current file but keeps Word open."
+            },
+            {
+                "goal": "Account Settings",
+                "action": {
+                    "type": "click",
+                    "target_text": "Account"
+                },
+                "fact": "Manages user profile and license."
+            },
+            {
+                "goal": "Word Options",
+                "action": {
+                    "type": "click",
+                    "target_text": "Options"
+                },
+                "fact": "Advanced application configuration."
+            }
+        ]
+    }
+]

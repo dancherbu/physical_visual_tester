@@ -1,0 +1,800 @@
+[
+    {
+        "description": "Common Dialog Box prompts expecting user confirmation.",
+        "prerequisites": [
+            "Dialog is visible"
+        ],
+        "actions": [
+            {
+                "goal": "Confirm Action",
+                "action": {
+                    "type": "click",
+                    "target_text": "OK"
+                },
+                "fact": "Accepts the current dialog or settings."
+            },
+            {
+                "goal": "Cancel Action",
+                "action": {
+                    "type": "click",
+                    "target_text": "Cancel"
+                },
+                "fact": "Closes the dialog without saving changes."
+            },
+            {
+                "goal": "Apply Changes",
+                "action": {
+                    "type": "click",
+                    "target_text": "Apply"
+                },
+                "fact": "Saves changes without closing the dialog."
+            },
+            {
+                "goal": "Confirm 'Yes'",
+                "action": {
+                    "type": "click",
+                    "target_text": "Yes"
+                },
+                "fact": "Affirmative response to a prompt."
+            },
+            {
+                "goal": "Decline 'No'",
+                "action": {
+                    "type": "click",
+                    "target_text": "No"
+                },
+                "fact": "Negative response to a prompt."
+            },
+            {
+                "goal": "Close Dialog",
+                "action": {
+                    "type": "click",
+                    "target_text": "Close"
+                },
+                "fact": "Dismisses the popup or window."
+            },
+            {
+                "goal": "Get Help",
+                "action": {
+                    "type": "click",
+                    "target_text": "Help"
+                },
+                "fact": "Opens documentation or assistance for this context."
+            },
+            {
+                "goal": "Retry Operation",
+                "action": {
+                    "type": "click",
+                    "target_text": "Retry"
+                },
+                "fact": "Attempts the failed operation again."
+            },
+            {
+                "goal": "Ignore Warning",
+                "action": {
+                    "type": "click",
+                    "target_text": "Ignore"
+                },
+                "fact": "Proceeds despite the warning condition."
+            },
+            {
+                "goal": "Abort Operation",
+                "action": {
+                    "type": "click",
+                    "target_text": "Abort"
+                },
+                "fact": "Stops the current operation immediately."
+            }
+        ]
+    },
+    {
+        "description": "Standard File Menu operations found in most Windows applications.",
+        "prerequisites": [
+            "Menu Bar is visible"
+        ],
+        "actions": [
+            {
+                "goal": "Create New File",
+                "action": {
+                    "type": "click",
+                    "target_text": "New"
+                },
+                "fact": "Creates a blank document or project."
+            },
+            {
+                "goal": "Open File",
+                "action": {
+                    "type": "click",
+                    "target_text": "Open"
+                },
+                "fact": "Browses text for an existing file to load."
+            },
+            {
+                "goal": "Save File",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save"
+                },
+                "fact": "Writes current changes to disk."
+            },
+            {
+                "goal": "Save As New File",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save As"
+                },
+                "fact": "Saves the current file with a new name or format."
+            },
+            {
+                "goal": "Print Document",
+                "action": {
+                    "type": "click",
+                    "target_text": "Print"
+                },
+                "fact": "Opens the print dialog."
+            },
+            {
+                "goal": "Exit Application",
+                "action": {
+                    "type": "click",
+                    "target_text": "Exit"
+                },
+                "fact": "Closes the application completely."
+            },
+            {
+                "goal": "Quit Application",
+                "action": {
+                    "type": "click",
+                    "target_text": "Quit"
+                },
+                "fact": "Closes the application completely."
+            },
+            {
+                "goal": "Export Data",
+                "action": {
+                    "type": "click",
+                    "target_text": "Export"
+                },
+                "fact": "Saves data in an external format."
+            },
+            {
+                "goal": "Import Data",
+                "action": {
+                    "type": "click",
+                    "target_text": "Import"
+                },
+                "fact": "Loads data from an external source."
+            },
+            {
+                "goal": "View Properties",
+                "action": {
+                    "type": "click",
+                    "target_text": "Properties"
+                },
+                "fact": "Shows metadata or settings for the selected item."
+            }
+        ]
+    },
+    {
+        "description": "Standard Edit Menu for text and object manipulation.",
+        "prerequisites": [
+            "Text or Object selected"
+        ],
+        "actions": [
+            {
+                "goal": "Cut Selection",
+                "action": {
+                    "type": "click",
+                    "target_text": "Cut"
+                },
+                "fact": "Removes selection and copies it to clipboard."
+            },
+            {
+                "goal": "Copy Selection",
+                "action": {
+                    "type": "click",
+                    "target_text": "Copy"
+                },
+                "fact": "Copies selection to clipboard without removing it."
+            },
+            {
+                "goal": "Paste from Clipboard",
+                "action": {
+                    "type": "click",
+                    "target_text": "Paste"
+                },
+                "fact": "Inserts clipboard content at cursor."
+            },
+            {
+                "goal": "Undo Action",
+                "action": {
+                    "type": "click",
+                    "target_text": "Undo"
+                },
+                "fact": "Reverts the last change."
+            },
+            {
+                "goal": "Redo Action",
+                "action": {
+                    "type": "click",
+                    "target_text": "Redo"
+                },
+                "fact": "Re-applies the previously undone change."
+            },
+            {
+                "goal": "Select All",
+                "action": {
+                    "type": "click",
+                    "target_text": "Select All"
+                },
+                "fact": "Highlights all content in the current view."
+            },
+            {
+                "goal": "Find / Search",
+                "action": {
+                    "type": "click",
+                    "target_text": "Find"
+                },
+                "fact": "Opens a search bar to locate text."
+            },
+            {
+                "goal": "Replace Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Replace"
+                },
+                "fact": "Swaps specific text with new text."
+            },
+            {
+                "goal": "Delete Selection",
+                "action": {
+                    "type": "click",
+                    "target_text": "Delete"
+                },
+                "fact": "Removes the selected item."
+            },
+            {
+                "goal": "Edit Preferences",
+                "action": {
+                    "type": "click",
+                    "target_text": "Preferences"
+                },
+                "fact": "Opens application settings."
+            }
+        ]
+    },
+    {
+        "description": "Standard Window Title Bar Controls.",
+        "prerequisites": [
+            "Window is active"
+        ],
+        "actions": [
+            {
+                "goal": "Minimize Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "-"
+                },
+                "fact": "Hides the window to taskbar."
+            },
+            {
+                "goal": "Maximize Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "□"
+                },
+                "fact": "Enlarges window to fill screen."
+            },
+            {
+                "goal": "Close Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "×"
+                },
+                "fact": "Closes the window."
+            },
+            {
+                "goal": "Restore Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "Restore"
+                },
+                "fact": "Returns window to previous size."
+            }
+        ]
+    },
+    {
+        "description": "Web Browser Toolbar and Navigation.",
+        "prerequisites": [
+            "App: Browser"
+        ],
+        "actions": [
+            {
+                "goal": "Go Back",
+                "action": {
+                    "type": "click",
+                    "target_text": "Back"
+                },
+                "fact": "Navigates to the previous page."
+            },
+            {
+                "goal": "Go Forward",
+                "action": {
+                    "type": "click",
+                    "target_text": "Forward"
+                },
+                "fact": "Navigates to the next page."
+            },
+            {
+                "goal": "Refresh Page",
+                "action": {
+                    "type": "click",
+                    "target_text": "Refresh"
+                },
+                "fact": "Reloads the current page."
+            },
+            {
+                "goal": "Refresh Page",
+                "action": {
+                    "type": "click",
+                    "target_text": "Reload"
+                },
+                "fact": "Reloads the current page."
+            },
+            {
+                "goal": "Stop Loading",
+                "action": {
+                    "type": "click",
+                    "target_text": "Stop"
+                },
+                "fact": "Cancels the page load."
+            },
+            {
+                "goal": "Go Home",
+                "action": {
+                    "type": "click",
+                    "target_text": "Home"
+                },
+                "fact": "Navigates to the homepage."
+            },
+            {
+                "goal": "Open History",
+                "action": {
+                    "type": "click",
+                    "target_text": "History"
+                },
+                "fact": "Shows list of visited sites."
+            },
+            {
+                "goal": "Open Downloads",
+                "action": {
+                    "type": "click",
+                    "target_text": "Downloads"
+                },
+                "fact": "Shows recently downloaded files."
+            },
+            {
+                "goal": "Bookmark Page",
+                "action": {
+                    "type": "click",
+                    "target_text": "Bookmark"
+                },
+                "fact": "Saves the current URL."
+            },
+            {
+                "goal": "Open Settings",
+                "action": {
+                    "type": "click",
+                    "target_text": "Settings"
+                },
+                "fact": "Opens browser configuration."
+            }
+        ]
+    },
+    {
+        "description": "Authentication and Login Forms.",
+        "prerequisites": [
+            "User is logged out"
+        ],
+        "actions": [
+            {
+                "goal": "Enter Username",
+                "action": {
+                    "type": "type",
+                    "target_text": "Username"
+                },
+                "fact": "Input field for user identifier."
+            },
+            {
+                "goal": "Enter Email",
+                "action": {
+                    "type": "type",
+                    "target_text": "Email"
+                },
+                "fact": "Input field for email address."
+            },
+            {
+                "goal": "Enter Password",
+                "action": {
+                    "type": "type",
+                    "target_text": "Password"
+                },
+                "fact": "Input field for secure credential."
+            },
+            {
+                "goal": "Log In",
+                "action": {
+                    "type": "click",
+                    "target_text": "Log In"
+                },
+                "fact": "Submits credentials to authenticate."
+            },
+            {
+                "goal": "Sign In",
+                "action": {
+                    "type": "click",
+                    "target_text": "Sign In"
+                },
+                "fact": "Submits credentials to authenticate."
+            },
+            {
+                "goal": "Sign Up",
+                "action": {
+                    "type": "click",
+                    "target_text": "Sign Up"
+                },
+                "fact": "Opens registration form for new users."
+            },
+            {
+                "goal": "Register",
+                "action": {
+                    "type": "click",
+                    "target_text": "Register"
+                },
+                "fact": "Opens registration form for new users."
+            },
+            {
+                "goal": "Reset Password",
+                "action": {
+                    "type": "click",
+                    "target_text": "Forgot Password"
+                },
+                "fact": "Initiates password recovery flow."
+            },
+            {
+                "goal": "Submit Form",
+                "action": {
+                    "type": "click",
+                    "target_text": "Submit"
+                },
+                "fact": "Sends form data to server."
+            },
+            {
+                "goal": "Remember Me",
+                "action": {
+                    "type": "click",
+                    "target_text": "Remember Me"
+                },
+                "fact": "Toggles checkbox to save session."
+            }
+        ]
+    },
+    {
+        "description": "Media Player Controls.",
+        "prerequisites": [
+            "Media application active"
+        ],
+        "actions": [
+            {
+                "goal": "Play Media",
+                "action": {
+                    "type": "click",
+                    "target_text": "Play"
+                },
+                "fact": "Starts playback."
+            },
+            {
+                "goal": "Pause Media",
+                "action": {
+                    "type": "click",
+                    "target_text": "Pause"
+                },
+                "fact": "Suspends playback temporarily."
+            },
+            {
+                "goal": "Stop Media",
+                "action": {
+                    "type": "click",
+                    "target_text": "Stop"
+                },
+                "fact": "Ends playback and resets to start."
+            },
+            {
+                "goal": "Next Track",
+                "action": {
+                    "type": "click",
+                    "target_text": "Next"
+                },
+                "fact": "Skips to the next item in playlist."
+            },
+            {
+                "goal": "Previous Track",
+                "action": {
+                    "type": "click",
+                    "target_text": "Previous"
+                },
+                "fact": "Goes back to the previous item."
+            },
+            {
+                "goal": "Mute Sound",
+                "action": {
+                    "type": "click",
+                    "target_text": "Mute"
+                },
+                "fact": "Silences audio output."
+            },
+            {
+                "goal": "Increase Volume",
+                "action": {
+                    "type": "click",
+                    "target_text": "Volume Up"
+                },
+                "fact": "Makes audio louder."
+            },
+            {
+                "goal": "Decrease Volume",
+                "action": {
+                    "type": "click",
+                    "target_text": "Volume Down"
+                },
+                "fact": "Makes audio quieter."
+            }
+        ]
+    },
+    {
+        "description": "Rich Text Formatting Toolbar.",
+        "prerequisites": [
+            "Text Editor active"
+        ],
+        "actions": [
+            {
+                "goal": "Bold Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Bold"
+                },
+                "fact": "Makes text thicker/bolder."
+            },
+            {
+                "goal": "Italicize Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Italic"
+                },
+                "fact": "Slants text to the right."
+            },
+            {
+                "goal": "Underline Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Underline"
+                },
+                "fact": "Adds a line under the text."
+            },
+            {
+                "goal": "Align Left",
+                "action": {
+                    "type": "click",
+                    "target_text": "Left Align"
+                },
+                "fact": "Aligns text to left margin."
+            },
+            {
+                "goal": "Center Text",
+                "action": {
+                    "type": "click",
+                    "target_text": "Center"
+                },
+                "fact": "Aligns text to the middle."
+            },
+            {
+                "goal": "Align Right",
+                "action": {
+                    "type": "click",
+                    "target_text": "Right Align"
+                },
+                "fact": "Aligns text to right margin."
+            },
+            {
+                "goal": "Change Font",
+                "action": {
+                    "type": "click",
+                    "target_text": "Font"
+                },
+                "fact": "Opens font selection menu."
+            },
+            {
+                "goal": "Change Color",
+                "action": {
+                    "type": "click",
+                    "target_text": "Color"
+                },
+                "fact": "Changes text color."
+            }
+        ]
+    },
+    {
+        "description": "System Controls and OS Shell.",
+        "prerequisites": [
+            "OS Shell visible"
+        ],
+        "actions": [
+            {
+                "goal": "Shutdown Computer",
+                "action": {
+                    "type": "click",
+                    "target_text": "Shutdown"
+                },
+                "fact": "Powers off the machine."
+            },
+            {
+                "goal": "Restart Computer",
+                "action": {
+                    "type": "click",
+                    "target_text": "Restart"
+                },
+                "fact": "Reboots the machine."
+            },
+            {
+                "goal": "Sleep Mode",
+                "action": {
+                    "type": "click",
+                    "target_text": "Sleep"
+                },
+                "fact": "Puts computer in low power mode."
+            },
+            {
+                "goal": "Lock Screen",
+                "action": {
+                    "type": "click",
+                    "target_text": "Lock"
+                },
+                "fact": "Locks the session demanding password."
+            },
+            {
+                "goal": "Sign Out",
+                "action": {
+                    "type": "click",
+                    "target_text": "Sign Out"
+                },
+                "fact": "Logs the current user off."
+            },
+            {
+                "goal": "Open Settings",
+                "action": {
+                    "type": "click",
+                    "target_text": "Settings"
+                },
+                "fact": "Opens system configuration."
+            },
+            {
+                "goal": "Control Panel",
+                "action": {
+                    "type": "click",
+                    "target_text": "Control Panel"
+                },
+                "fact": "Opens legacy system tools."
+            },
+            {
+                "goal": "Task Manager",
+                "action": {
+                    "type": "click",
+                    "target_text": "Task Manager"
+                },
+                "fact": "Shows running processes."
+            }
+        ]
+    },
+    {
+        "description": "Common Action Verbs in UI",
+        "prerequisites": [],
+        "actions": [
+            {
+                "goal": "Search Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "Search"
+                },
+                "fact": "Initiates a search query."
+            },
+            {
+                "goal": "Filter List",
+                "action": {
+                    "type": "click",
+                    "target_text": "Filter"
+                },
+                "fact": "Narrows down displayed results."
+            },
+            {
+                "goal": "Sort List",
+                "action": {
+                    "type": "click",
+                    "target_text": "Sort"
+                },
+                "fact": "Orders items by criteria."
+            },
+            {
+                "goal": "Download Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "Download"
+                },
+                "fact": "Transfers file to local storage."
+            },
+            {
+                "goal": "Upload Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "Upload"
+                },
+                "fact": "Transfers file to remote server."
+            },
+            {
+                "goal": "Share Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "Share"
+                },
+                "fact": "Opens sharing options."
+            },
+            {
+                "goal": "Edit Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "Edit"
+                },
+                "fact": "Modifies the selected item."
+            },
+            {
+                "goal": "View Details",
+                "action": {
+                    "type": "click",
+                    "target_text": "View"
+                },
+                "fact": "Shows more information."
+            },
+            {
+                "goal": "Next Step",
+                "action": {
+                    "type": "click",
+                    "target_text": "Next"
+                },
+                "fact": "Proceeds to subsequent screen."
+            },
+            {
+                "goal": "Previous Step",
+                "action": {
+                    "type": "click",
+                    "target_text": "Previous"
+                },
+                "fact": "Returns to prior screen."
+            },
+            {
+                "goal": "Finish Wizard",
+                "action": {
+                    "type": "click",
+                    "target_text": "Finish"
+                },
+                "fact": "Completes the workflow."
+            },
+            {
+                "goal": "Cancel Wizard",
+                "action": {
+                    "type": "click",
+                    "target_text": "Cancel"
+                },
+                "fact": "Exits the workflow."
+            }
+        ]
+    }
+]

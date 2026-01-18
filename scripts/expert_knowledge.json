@@ -1,0 +1,178 @@
+[
+    {
+        "description": "Windows 11 Desktop with Taskbar visible at the bottom.",
+        "prerequisites": [],
+        "actions": [
+            {
+                "goal": "Open Start Menu",
+                "action": {
+                    "type": "click",
+                    "target_text": "Start"
+                },
+                "fact": "Opens the main application launcher and search menu."
+            },
+            {
+                "goal": "Open File Explorer",
+                "action": {
+                    "type": "click",
+                    "target_text": "File Explorer"
+                },
+                "fact": "Opens the file manager to browse documents and drives."
+            },
+            {
+                "goal": "Open Web Browser",
+                "action": {
+                    "type": "click",
+                    "target_text": "Microsoft Edge"
+                },
+                "fact": "Launches the default web browser."
+            },
+            {
+                "goal": "Search / Talk to Cortana",
+                "action": {
+                    "type": "click",
+                    "target_text": "Search"
+                },
+                "fact": "Focuses the system search bar."
+            }
+        ]
+    },
+    {
+        "description": "A standard application window (e.g. Notepad, Chrome) with title bar controls.",
+        "prerequisites": [
+            "Window is open"
+        ],
+        "actions": [
+            {
+                "goal": "Close Application",
+                "action": {
+                    "type": "click",
+                    "target_text": "Close"
+                },
+                "fact": "Closes the current window or application. Usually an 'X' icon."
+            },
+            {
+                "goal": "Maximize Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "Maximize"
+                },
+                "fact": "Expands the window to fill the monitor."
+            },
+            {
+                "goal": "Minimize Window",
+                "action": {
+                    "type": "click",
+                    "target_text": "Minimize"
+                },
+                "fact": "Hides the window to the taskbar."
+            }
+        ]
+    },
+    {
+        "description": "Notepad Application - Empty Text File",
+        "prerequisites": [
+            "App: Notepad"
+        ],
+        "actions": [
+            {
+                "goal": "Type Text",
+                "action": {
+                    "type": "type",
+                    "target_text": "Text Editor Area"
+                },
+                "fact": "Enters text content into the active document."
+            },
+            {
+                "goal": "Save File",
+                "action": {
+                    "type": "click",
+                    "target_text": "File"
+                },
+                "fact": "Opens the File menu to access Save options."
+            }
+        ]
+    },
+    {
+        "description": "Notepad 'File' Menu is open.",
+        "prerequisites": [
+            "App: Notepad",
+            "Menu: File"
+        ],
+        "actions": [
+            {
+                "goal": "Save As...",
+                "action": {
+                    "type": "click",
+                    "target_text": "Save As..."
+                },
+                "fact": "Opens dialog to save file with a specific name."
+            },
+            {
+                "goal": "Exit Notepad",
+                "action": {
+                    "type": "click",
+                    "target_text": "Exit"
+                },
+                "fact": "Quits the application."
+            }
+        ]
+    },
+    {
+        "description": "Web Browser showing Google Homepage",
+        "prerequisites": [
+            "App: Browser",
+            "URL: google.com"
+        ],
+        "actions": [
+            {
+                "goal": "Search Google",
+                "action": {
+                    "type": "click",
+                    "target_text": "Search"
+                },
+                "fact": "Focuses the search box to type a query."
+            },
+            {
+                "goal": "Google Search (Button)",
+                "action": {
+                    "type": "click",
+                    "target_text": "Google Search"
+                },
+                "fact": "Submits the search query."
+            }
+        ]
+    },
+    {
+        "description": "PowerPoint Presentation - Home Tab",
+        "prerequisites": [
+            "App: PowerPoint"
+        ],
+        "actions": [
+            {
+                "goal": "Start Presentation",
+                "action": {
+                    "type": "click",
+                    "target_text": "Slide Show"
+                },
+                "fact": "Switches to full screen presentation mode."
+            },
+            {
+                "goal": "New Slide",
+                "action": {
+                    "type": "click",
+                    "target_text": "New Slide"
+                },
+                "fact": "Adds a blank slide to the deck."
+            },
+            {
+                "goal": "Insert Image or Shape",
+                "action": {
+                    "type": "click",
+                    "target_text": "Insert"
+                },
+                "fact": "Switches to the Insert tab tools."
+            }
+        ]
+    }
+]

@@ -1,0 +1,259 @@
+[
+    {
+        "description": "Windows File Explorer - Navigation Pane (Sidebar)",
+        "prerequisites": [
+            "App: File Explorer"
+        ],
+        "actions": [
+            {
+                "goal": "Go to Quick Access",
+                "action": {
+                    "type": "click",
+                    "target_text": "Quick access"
+                },
+                "fact": "Navigates to frequently used folders."
+            },
+            {
+                "goal": "Go to This PC",
+                "action": {
+                    "type": "click",
+                    "target_text": "This PC"
+                },
+                "fact": "Shows all drives and devices connected to the computer."
+            },
+            {
+                "goal": "Open Desktop Folder",
+                "action": {
+                    "type": "click",
+                    "target_text": "Desktop"
+                },
+                "fact": "Navigates to the user's Desktop folder."
+            },
+            {
+                "goal": "Open Documents",
+                "action": {
+                    "type": "click",
+                    "target_text": "Documents"
+                },
+                "fact": "Navigates to the user's Documents folder."
+            },
+            {
+                "goal": "Open Downloads",
+                "action": {
+                    "type": "click",
+                    "target_text": "Downloads"
+                },
+                "fact": "Navigates to the user's Downloads folder."
+            },
+            {
+                "goal": "Open Pictures",
+                "action": {
+                    "type": "click",
+                    "target_text": "Pictures"
+                },
+                "fact": "Navigates to the user's Pictures folder."
+            },
+            {
+                "goal": "Open Music",
+                "action": {
+                    "type": "click",
+                    "target_text": "Music"
+                },
+                "fact": "Navigates to the user's Music folder."
+            },
+            {
+                "goal": "Open Videos",
+                "action": {
+                    "type": "click",
+                    "target_text": "Videos"
+                },
+                "fact": "Navigates to the user's Videos folder."
+            },
+            {
+                "goal": "Open C Drive",
+                "action": {
+                    "type": "click",
+                    "target_text": "Local Disk (C:)"
+                },
+                "fact": "Opens the main system drive."
+            },
+            {
+                "goal": "Open Network",
+                "action": {
+                    "type": "click",
+                    "target_text": "Network"
+                },
+                "fact": "Browses devices on the local network."
+            }
+        ]
+    },
+    {
+        "description": "Windows File Explorer - Toolbar / Ribbon",
+        "prerequisites": [
+            "App: File Explorer"
+        ],
+        "actions": [
+            {
+                "goal": "Create New Folder",
+                "action": {
+                    "type": "click",
+                    "target_text": "New folder"
+                },
+                "fact": "Creates a new directory in the current location."
+            },
+            {
+                "goal": "Create New Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "New"
+                },
+                "fact": "Dropdown to create new files or folders."
+            },
+            {
+                "goal": "View Properties",
+                "action": {
+                    "type": "click",
+                    "target_text": "Properties"
+                },
+                "fact": "Shows details (size, dates) about the selected item."
+            },
+            {
+                "goal": "Delete Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "Delete"
+                },
+                "fact": "Moves selected item to Recycle Bin."
+            },
+            {
+                "goal": "Rename Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "Rename"
+                },
+                "fact": "Allows changing the name of the selected file or folder."
+            },
+            {
+                "goal": "Copy Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "Copy to"
+                },
+                "fact": "Copies selected item to a new location."
+            },
+            {
+                "goal": "Move Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "Move to"
+                },
+                "fact": "Moves selected item to a new location."
+            }
+        ]
+    },
+    {
+        "description": "Windows Recycle Bin Actions",
+        "prerequisites": [
+            "Desktop or Explorer visible"
+        ],
+        "actions": [
+            {
+                "goal": "Open Recycle Bin",
+                "action": {
+                    "type": "click",
+                    "target_text": "Recycle Bin"
+                },
+                "fact": "Opens the trash folder to view deleted items."
+            },
+            {
+                "goal": "Empty Recycle Bin",
+                "action": {
+                    "type": "click",
+                    "target_text": "Empty Recycle Bin"
+                },
+                "fact": "Permanently deletes all items in the Recycle Bin. (Usually requires Right Click)"
+            },
+            {
+                "goal": "Restore Item",
+                "action": {
+                    "type": "click",
+                    "target_text": "Restore all items"
+                },
+                "fact": "Moves deleted items back to their original location."
+            }
+        ]
+    },
+    {
+        "description": "File Explorer - Address Bar & Navigation",
+        "prerequisites": [
+            "App: File Explorer"
+        ],
+        "actions": [
+            {
+                "goal": "Go Up One Level",
+                "action": {
+                    "type": "click",
+                    "target_text": "Up to"
+                },
+                "fact": "Navigates to the parent folder."
+            },
+            {
+                "goal": "Go Back",
+                "action": {
+                    "type": "click",
+                    "target_text": "Back to"
+                },
+                "fact": "Navigates to the previously visited folder."
+            },
+            {
+                "goal": "Search This Box",
+                "action": {
+                    "type": "click",
+                    "target_text": "Search"
+                },
+                "fact": "Focuses search bar to find files in current folder."
+            }
+        ]
+    },
+    {
+        "description": "Specific System Directories (Standard Layout)",
+        "prerequisites": [
+            "App: File Explorer",
+            "Inside C: Drive or User Folder"
+        ],
+        "actions": [
+            {
+                "goal": "Open Program Files",
+                "action": {
+                    "type": "click",
+                    "target_text": "Program Files"
+                },
+                "fact": "Opens standard 64-bit application installation directory."
+            },
+            {
+                "goal": "Open Program Files (x86)",
+                "action": {
+                    "type": "click",
+                    "target_text": "Program Files (x86)"
+                },
+                "fact": "Opens 32-bit application installation directory."
+            },
+            {
+                "goal": "Open Users Folder",
+                "action": {
+                    "type": "click",
+                    "target_text": "Users"
+                },
+                "fact": "Opens the directory containing all user profiles."
+            },
+            {
+                "goal": "Open Windows Folder",
+                "action": {
+                    "type": "click",
+                    "target_text": "Windows"
+                },
+                "fact": "Opens the system OS directory."
+            }
+        ]
+    }
+]

@@ -1,5 +1,4 @@
-1. Click "Username" field
-2. Type "danboakye"
-3. Click "Password" field
-4. Type "supersecret123"
-5. Click "Login" button
+1. Click "Microsoft Edge"
+2. Click "Search"
+3. Click "Google Search"
+4. Click "Close"

@@ -67,14 +67,23 @@ class OllamaClient {
   Future<List<double>> embed({
     required String prompt,
   }) async {
-    // [DEBUG] Mock Embedding to prevent Model Swapping
-    // print("[OllamaClient] Embedding Mocked (SKIPPED).");
-    return List.filled(768, 0.0); // Dummy vector
-
-    /* 
     final url = baseUrl.resolve('/api/embeddings');
-    ...
-    */
+    final response = await _http.post(
+      url,
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({
+        'model': model,
+        'prompt': prompt,
+      }),
+    ).timeout(const Duration(seconds: 30)); 
+
+    if (response.statusCode != 200) {
+      throw StateError('Ollama embed failed: ${response.statusCode} ${response.body}');
+    }
+
+    final json = jsonDecode(response.body);
+    final embedding = (json['embedding'] as List).cast<double>();
+    return embedding;
   }
 
   void close() {

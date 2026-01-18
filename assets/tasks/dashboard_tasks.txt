@@ -1,4 +1,4 @@
-1. Click "Analytics" tab
-2. Click "Export Report"
-3. Click "Date Range"
-4. Select "Last 30 Days"
+1. Click "Apply"
+2. Click "Yes"
+3. Click "No"
+4. Click "Help"

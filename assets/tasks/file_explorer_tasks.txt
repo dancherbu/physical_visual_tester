@@ -1,4 +1,4 @@
-1. Click "Documents" in sidebar
-2. Right click "Project Folder"
-3. Select "Copy"
-4. Click "Address Bar"
+1. Click "File Explorer"
+2. Click "Minimize"
+3. Click "Maximize"
+4. Click "Close"

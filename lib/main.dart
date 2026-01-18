@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import 'shell/desktop_shell.dart';
 import 'shell/main_shell.dart';
 
 void main() {
@@ -17,7 +20,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MainShell(),
+      home: Platform.isWindows ? const DesktopShell() : const MainShell(),
     );
   }
 }

@@ -17,9 +17,9 @@ import '../spikes/brain/ollama_client.dart';
 import '../spikes/brain/qdrant_service.dart';
 import 'robot_service.dart';
 import 'training_model.dart';
+import 'offline_trainer.dart'; // [NEW]
 
 // HID
-
 
 class RobotTesterPage extends StatefulWidget {
   const RobotTesterPage({super.key});
@@ -411,6 +411,25 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   
   // --- Training Control ---
   
+  // [NEW] Offline Training Method
+  void _runOfflineTraining() async {
+      _log("🚀 Starting Offline Training Sequence...");
+      final trainer = OfflineTrainer(
+        robot: _robot,
+        onLog: (msg) => _log("[TRAINER] $msg"),
+      );
+      
+      setState(() => _isAnalyzingIdle = true); // Reuse busy state
+      await trainer.runTraining(); 
+      setState(() => _isAnalyzingIdle = false);
+      _log("✅ Offline Training Sequence Finished.");
+      
+      // Refresh visualization if we are on a mock screen
+      if (_useMock && _currentMockAsset != null) {
+         _captureAndAnalyze();
+      }
+  }
+
   void _toggleTraining() async {
       _resetIdleTimer();
       // Cannot train while acting
@@ -644,10 +663,74 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
      });
   }
 
+import '../hid/hid_contract.dart';
+import '../hid/method_channel_hid_adapter.dart';
+// ... previous imports ...
+
+// ... inside _RobotTesterPageState ...
+
+  // Services
+  CameraController? _controller;
+  final _recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+  final ImagePicker _picker = ImagePicker();
+  late RobotService _robot;
+  final HidAdapter _hid = MethodChannelHidAdapter(); // [NEW] HID Adapter
+
+// ...
+
   Future<void> _executeAction(Map<String, dynamic> action) async {
       _resetIdleTimer();
+      
+      // 1. MOCK EXECUTION
       if (_useMock) {
          _log("(Mock) Clicked at ${action['x']}, ${action['y']}");
+         return; 
+      }
+      
+      // 2. REAL HID EXECUTION
+      final type = action['type'] as String? ?? 'click';
+      
+      try {
+          if (type == 'click') {
+              final x = action['x'] as int;
+              final y = action['y'] as int;
+              
+              _log("🖱️ Moving Mouse to ($x, $y)...");
+              
+              // Strategy: "Corner Reset"
+              // Since we only have Relative Mouse Move, we first slam the cursor 
+              // to the top-left (0,0) with a large negative delta, then move 
+              // to the absolute target coordinate.
+              
+              // 1. Reset to 0,0
+              await _hid.sendMouseMove(dx: -4000, dy: -4000); 
+              await Future.delayed(const Duration(milliseconds: 50));
+              
+              // 2. Move to Target
+              // Note: This assumes 1 'pixel' of movement equals 1 screen pixel.
+              // Mouse acceleration might mess this up, but it's a start.
+              await _hid.sendMouseMove(dx: x, dy: y);
+              await Future.delayed(const Duration(milliseconds: 100));
+              
+              // 3. Click
+              await _hid.sendClick(HidMouseButton.left);
+              _log("✅ Clicked Left Mouse Button.");
+              
+          } else if (type == 'keyboard_type') {
+              final text = action['target_text'] as String;
+              _log("⌨️ Typing: \"$text\"");
+              await _hid.sendKeyText(text);
+              await _hid.sendKeyText('\n'); // Enter usually expected
+              _log("✅ Typed text.");
+          } else if (type == 'mouse_right_click') {
+               // Similar move logic if we had x,y, or just click where we are?
+               // Usually for 'Context Menu' we might assume we move there first.
+               // For now, let's just click.
+               await _hid.sendClick(HidMouseButton.right);
+               _log("✅ Right Clicked.");
+          }
+      } catch (e) {
+          _log("❌ HID Error: $e");
       }
   }
 
@@ -1278,6 +1361,13 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
              icon: const Icon(Icons.collections),
              tooltip: "Select Mock Screen",
              onPressed: _showMockManagerDialog,
+           ),
+
+           // [NEW] Offline Trainer Button
+           IconButton(
+             icon: const Icon(Icons.school, color: Colors.deepPurpleAccent),
+             tooltip: "Run Offline Training (Batch)",
+             onPressed: _runOfflineTraining,
            ),
 
            // Task Upload

@@ -1,4 +1,4 @@
-1. Click text area
-2. Type "Hello World"
-3. Press Enter
-4. Type "This is a robot."
+1. Click "Text Editor Area"
+2. Type Text
+3. Click "Save"
+4. Click "Close"
