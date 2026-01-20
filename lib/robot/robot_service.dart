@@ -6,6 +6,7 @@ import '../spikes/brain/ollama_client.dart';
 import '../spikes/brain/qdrant_service.dart';
 import 'training_model.dart';
 import 'dart:io';
+import 'planner_service.dart';
 
 /// Represents the decision made by the Robot.
 class RobotDecision {
@@ -43,8 +44,16 @@ class RobotService {
   final OllamaClient ollama;
     final OllamaClient? ollamaVisionClient;
     late final OllamaClient ollamaVision = ollamaVisionClient ?? ollama;
-  final OllamaClient ollamaEmbed; // [NEW]
+  final OllamaClient ollamaEmbed;
   final QdrantService qdrant;
+  late final PlannerService planner = PlannerService(ollama);
+
+  final _logController = StreamController<String>.broadcast();
+  Stream<String> get logs => _logController.stream;
+  
+  void dispose() {
+    _logController.close();
+  }
   
   Future<Map<String, dynamic>> checkHealth() async {
     final ollamaOk = await ollama.ping();
@@ -194,51 +203,71 @@ class RobotService {
   }) async {
     // 1. Create the detailed description
     final description = overrideDescription ?? state.toLLMDescription();
-    final prompt = 'Goal: $goal. Screen: $description. Prerequisites: $prerequisites';
 
-    // 2. Embed
-    final embedding = await ollamaEmbed.embed(prompt: prompt);
-
-    // 3. Save
-    await qdrant.saveMemory(
-      embedding: embedding,
-      payload: {
+    // Shared Payload
+    final payload = {
         'goal': goal,
         'action': action,
         'description': description,
         'prerequisites': prerequisites,
         'fact': factualDescription ?? '',
         'timestamp': DateTime.now().toIso8601String(),
-      },
+    };
+
+    // 2a. Goal-Oriented Memory (for "How do I...?")
+    // Embed the Goal itself so we can find it by task name.
+    final goalEmbedding = await ollamaEmbed.embed(prompt: goal);
+    await qdrant.saveMemory(
+      embedding: goalEmbedding,
+      payload: { ...payload, 'memory_type': 'task' },
+    );
+
+    // 2b. Context-Oriented Memory (for "What can I do here?" / Visual Feedback)
+    // Embed the Screen Description so we can find it when looking at the screen.
+    final contextEmbedding = await ollamaEmbed.embed(prompt: description);
+    await qdrant.saveMemory(
+      embedding: contextEmbedding,
+      payload: { ...payload, 'memory_type': 'context' },
     );
   }
 
   /// Recalls "Known" interactive elements for the current screen context.
   /// Returns a set of text labels (target_text) that resulted in successful actions in the past.
   Future<Set<String>> fetchKnownInteractiveElements(UIState state) async {
+      debugPrint('[ROBOT] 📚 fetchKnownInteractiveElements: Starting recall...');
       try {
           final description = state.toLLMDescription();
+          debugPrint('[ROBOT] 📚 Context description length: ${description.length} chars');
+          
           final embedding = await ollamaEmbed.embed(prompt: description);
+          debugPrint('[ROBOT] 📚 Got embedding, dim=${embedding.length}');
           
           // Search broadly for this context
           final memories = await qdrant.search(
             queryEmbedding: embedding,
-            limit: 15, // Check top 15 relevant memories
+            limit: 50, // Check top 50 relevant memories
           );
+          
+          debugPrint('[ROBOT] 📚 Search returned ${memories.length} memories');
           
           final known = <String>{};
           for (final m in memories) {
               final payload = m['payload'] as Map<String, dynamic>;
+              final score = m['score'] as double?;
               if (payload.containsKey('action')) {
                   final action = payload['action'] as Map<String, dynamic>;
                   if (action.containsKey('target_text')) {
-                      known.add(action['target_text'].toString());
+                      final target = action['target_text'].toString();
+                      known.add(target);
+                      debugPrint('[ROBOT] 📚   Found known element: "$target" (score=${score?.toStringAsFixed(3)})');
                   }
               }
           }
+          
+          debugPrint('[ROBOT] 📚 RESULT: ${known.length} known elements: $known');
           return known;
       } catch (e) {
-          debugPrint("Memory Fetch Error: $e");
+          debugPrint('[ROBOT] ❌ Memory Fetch Error: $e');
           return {};
       }
   }
@@ -558,7 +587,9 @@ class RobotService {
           
           // [DEBUG] Start Heartbeat Logger
           final timer = Timer.periodic(const Duration(seconds: 5), (t) {
-              debugPrint("⏳ [Ollama Wait] Still waiting... (${t.tick * 5}s elapsed)");
+              final msg = "⏳ [Ollama Wait] Still waiting... (${t.tick * 5}s elapsed)";
+              debugPrint(msg);
+              _logController.add(msg);
           });
 
                     final activeClient = imageBase64 != null ? ollamaVision : ollama;
@@ -579,6 +610,7 @@ class RobotService {
           
           debugPrint("✅ [Ollama Done] Response received in ${stopwatch.elapsed.inSeconds}s.");
           debugPrint("[ROBOT] [OLLAMA RAW]: $response");
+          _logController.add("VERBOSE: [OLLAMA RESPONSE]\n$response");
           var clean = _extractJson(response).trim();
           
           if (!clean.startsWith('{')) {
@@ -817,14 +849,22 @@ Rules:
     Future<IdleAnalysisResult> analyzeIdlePageHybrid({
         required String imageBase64,
         required List<String> labels,
+        List<String> knownGoals = const [],
         int maxItems = 30,
         int numPredict = 192,
         double visionConfidenceThreshold = 0.6,
     }) async {
+        debugPrint('[ROBOT] 🔬 analyzeIdlePageHybrid: Starting...');
+        debugPrint('[ROBOT] 🔬 Input: ${labels.length} labels, ${knownGoals.length} knownGoals');
+        
         try {
-            if (labels.isEmpty) return IdleAnalysisResult();
+            if (labels.isEmpty) {
+                debugPrint('[ROBOT] 🔬 No labels, returning empty');
+                return IdleAnalysisResult();
+            }
 
             final cleaned = _cleanLabelList(labels);
+            debugPrint('[ROBOT] 🔬 After cleaning: ${cleaned.length} labels');
             if (cleaned.isEmpty) return IdleAnalysisResult();
 
             final unique = <String>{};
@@ -836,6 +876,8 @@ Rules:
                 if (unique.add(key)) pruned.add(v);
                 if (pruned.length >= maxItems) break;
             }
+            
+            debugPrint('[ROBOT] 🔬 Pruned labels (${pruned.length}): ${pruned.take(10).join(", ")}...');
 
             final labelList = pruned.map((l) => '"$l"').join(', ');
             final prompt = '''
@@ -849,6 +891,7 @@ Labels:
 [$labelList]
 ''';
 
+            debugPrint('[ROBOT] 🔬 Sending to vision model: ${ollamaVision.model}');
             final response = await ollamaVision.generate(
                 prompt: prompt,
                 images: [imageBase64],
@@ -856,11 +899,17 @@ Labels:
                 temperature: 0.1,
             ).timeout(const Duration(seconds: 180));
 
+            debugPrint('[ROBOT] 🔬 Vision model raw response (first 500 chars): ${response.substring(0, response.length > 500 ? 500 : response.length)}');
+            
             final clean = _extractJson(response);
+            debugPrint('[ROBOT] 🔬 Extracted JSON (first 300 chars): ${clean.substring(0, clean.length > 300 ? 300 : clean.length)}');
+            
             dynamic decoded;
             try {
                 decoded = jsonDecode(clean);
-            } catch (_) {
+                debugPrint('[ROBOT] 🔬 JSON decoded successfully, type: ${decoded.runtimeType}');
+            } catch (e) {
+                debugPrint('[ROBOT] ⚠️ JSON decode failed: $e');
                 decoded = null;
             }
 
@@ -870,8 +919,14 @@ Labels:
                     if (item is Map<String, dynamic>) items.add(item);
                 }
             }
+            
+            debugPrint('[ROBOT] 🔬 Parsed ${items.length} items from vision response');
+            for (var i = 0; i < items.length && i < 5; i++) {
+                debugPrint('[ROBOT] 🔬   Item $i: label="${items[i]['label']}", purpose="${items[i]['purpose']}", conf=${items[i]['confidence']}');
+            }
 
             if (items.isEmpty) {
+                debugPrint('[ROBOT] 🔬 No items parsed, trying fallback text-only prompt...');
                 final fallbackPrompt = '''
 You are given UI labels from a screenshot. For each label, infer a role and purpose based on common UI patterns.
 Return ONLY lines in this exact format:
@@ -887,6 +942,8 @@ Labels:
                     .generate(prompt: fallbackPrompt, numPredict: numPredict)
                     .timeout(const Duration(seconds: 180));
 
+                debugPrint('[ROBOT] 🔬 Fallback response: ${fallbackResponse.substring(0, fallbackResponse.length > 300 ? 300 : fallbackResponse.length)}');
+                
                 for (final line in fallbackResponse.split('\n')) {
                     if (!line.contains('|')) continue;
                     final parts = line.split('|').map((p) => p.trim()).toList();
@@ -898,14 +955,18 @@ Labels:
                         'confidence': 0.7,
                     });
                 }
+                debugPrint('[ROBOT] 🔬 Fallback parsed ${items.length} items');
             }
 
             if (items.isEmpty) {
+                debugPrint('[ROBOT] 🔬 No items to process, returning empty result');
                 return IdleAnalysisResult();
             }
 
             final learned = <String>{};
             final questions = <String>[];
+            int skippedKnown = 0;
+            int skippedLowConf = 0;
 
             final tasks = <Future<void>>[];
             for (final item in items) {
@@ -914,9 +975,18 @@ Labels:
                 final purpose = (item['purpose'] ?? '').toString().trim();
                 final conf = item['confidence'];
                 final confVal = conf is num ? conf.toDouble() : double.tryParse(conf?.toString() ?? '') ?? 0.0;
+                
                 if (label.isEmpty) continue;
+                
+                // [DEBUG] Check de-duplication
+                if (knownGoals.contains(label)) {
+                    debugPrint('[ROBOT] 🔬 SKIPPING "$label" - already in knownGoals');
+                    skippedKnown++;
+                    continue;
+                }
 
                 if (purpose.isNotEmpty && confVal >= visionConfidenceThreshold) {
+                    debugPrint('[ROBOT] 🔬 LEARNING: "$label" -> "$purpose" (conf=$confVal)');
                     tasks.add(learnVisionOnly(
                         goal: purpose,
                         action: {
@@ -928,14 +998,20 @@ Labels:
                         fact: purpose,
                         context: '',
                     ).then((_) {
-                       // Add to learned items ONLY after successful save
                        learned.add(label);
+                    }).catchError((e) {
+                       debugPrint('[ROBOT] ⚠️ Failed to learn "$label": $e');
                     }));
                 } else {
+                    debugPrint('[ROBOT] 🔬 QUESTION: "$label" (conf=$confVal < $visionConfidenceThreshold or no purpose)');
+                    skippedLowConf++;
                     questions.add('What does "$label" do?');
                 }
             }
             await Future.wait(tasks);
+
+            debugPrint('[ROBOT] 🔬 SUMMARY: learned=${learned.length}, questions=${questions.length}, skippedKnown=$skippedKnown, skippedLowConf=$skippedLowConf');
+            debugPrint('[ROBOT] 🔬 Learned items: $learned');
 
             return IdleAnalysisResult(messages: questions, learnedItems: learned);
         } catch (e) {
@@ -1325,8 +1401,15 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
         required String fact,
         String? context,
     }) async {
+        final targetText = action['target_text'] ?? 'N/A';
+        debugPrint('[ROBOT] 🎓 learnVisionOnly: goal="$goal", target="$targetText"');
+        
         final description = 'Goal: $goal. Fact: $fact. Context: ${context ?? ''}'.trim();
+        debugPrint('[ROBOT] 🎓 Description: $description');
+        
         final embedding = await ollamaEmbed.embed(prompt: description);
+        debugPrint('[ROBOT] 🎓 Got embedding, dim=${embedding.length}');
+        
         await qdrant.saveMemory(
             embedding: embedding,
             payload: {
@@ -1338,6 +1421,8 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
                 'timestamp': DateTime.now().toIso8601String(),
             },
         );
+        
+        debugPrint('[ROBOT] 🎓 Successfully saved to Qdrant!');
     }
 
     List<String> _extractQuestionsFromText(String text) {
@@ -2095,6 +2180,54 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
           if (clean.startsWith('[')) return "$clean]"; 
       }
       return clean;
+  }
+  /// Generates a draft plan using Ollama. Does NOT save yet.
+  Future<SequencePlan> draftSequence({
+      required String goal,
+      required UIState state,
+  }) async {
+      _logController.add("🧠 Reasoning about sequence for '$goal'...");
+      
+      final description = state.toLLMDescription();
+      final plan = await planner.generatePlan(goal: goal, screenDescription: description);
+      
+      _logController.add("📝 Plan generated with ${plan.steps.length} steps and ${plan.questions.length} questions.");
+      for (final step in plan.steps) {
+         _logController.add("  - ${step.action} ${step.target} (${step.reasoning})");
+      }
+      for (final q in plan.questions) {
+         _logController.add("  ❓ Needs Info: $q");
+      }
+      
+      return plan;
+  }
+
+  /// Saves a validated plan as a persistent sequence.
+  Future<String> savePlanAsSequence(SequencePlan plan) async {
+      final sequenceId = plan.goal.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_');
+      
+      _logController.add("💾 Saving sequence '$sequenceId'...");
+      
+      for (int i=0; i<plan.steps.length; i++) {
+          final step = plan.steps[i];
+          
+          await saveSequenceStep(
+              sequenceId: sequenceId,
+              stepOrder: i,
+              goal: "Step ${i+1}: ${step.action} ${step.target}",
+              action: {
+                  'type': step.action,
+                  'target_text': step.target,
+                  'text': step.inputParam, 
+                  'param': step.inputParam 
+              },
+              description: step.reasoning,
+              targetText: step.target,
+          );
+      }
+      
+      _logController.add("✅ Sequence '$sequenceId' saved successfully!");
+      return sequenceId;
   }
 }
 

@@ -96,6 +96,20 @@ class _BrainStatsPageState extends State<BrainStatsPage> {
                         const Text("Recent Learnings", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 10),
                         _buildRecentList(),
+                        const SizedBox(height: 30),
+                        const Divider(),
+                        Center(
+                            child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.red.shade100, 
+                                    foregroundColor: Colors.red
+                                ),
+                                icon: const Icon(Icons.delete_forever),
+                                label: const Text("Reset Memory & Re-Initialize"),
+                                onPressed: _forceInitHeal,
+                            ),
+                        ),
+                        const SizedBox(height: 20),
                       ],
                     ),
                   ),

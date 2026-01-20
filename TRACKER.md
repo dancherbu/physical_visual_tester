@@ -188,3 +188,15 @@ The Robot runs a continuous loop:
     - [x] **UI Polish:** Hidden task list by default on Desktop; Added "Brain Statistics" to View menu.
     - [x] **Desktop OCR Fix:** Implemented TSV parsing for Tesseract to generate proper `OcrBlock`s with bounding boxes.
 
+### Phase 3: Generative Planning & Reasoning
+- [ ] **1. Reasoning Loop & Prerequisite Analysis:**
+    - [x] Implement `askOllamaForPlan(goal, state)`: Robot asks "How do I do X?" and "What are prerequisites?".
+    - [x] Create `SequencePlan` model to represent multi-step logic derived from LLM.
+    - [ ] Verify plan feasibility against current screen state.
+- [ ] **2. Generative Sequence Building:**
+    - [x] Convert LLM plan into a persistent Sequence (saved to Qdrant).
+    - [ ] Support parameterization (e.g., "Login as <user>" -> "Type <user> into 'Username'").
+- [ ] **3. Sequence Execution with Logic:**
+    - [ ] Update `executeSequence` to handle parameters and dynamic flow.
+    - [x] Allow "Reset Memory" from Brain Statistics page directly.
+

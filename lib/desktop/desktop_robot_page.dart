@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:camera/camera.dart';
@@ -15,13 +15,14 @@ import 'package:screen_capturer/screen_capturer.dart';
 import '../hid/hid_contract.dart';
 import '../hid/windows_hid_adapter.dart';
 import '../robot/robot_service.dart';
+import '../robot/planner_service.dart';
 import '../robot/training_model.dart';
+import '../vision/ocr_models.dart';
 import '../robot/brain_stats_page.dart';
 import '../robot/sequences_page.dart';
 import '../spikes/brain/ollama_client.dart';
 import '../spikes/brain/qdrant_service.dart';
 import '../spikes/filesystem_indexer.dart';
-import '../vision/ocr_models.dart';
 import '../vision/vision_overlay_painter.dart';
 
 class DesktopRobotPage extends StatefulWidget {
@@ -162,6 +163,14 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
   String? _pendingTaskListRaw;
 
   bool _isRobotRunning = false; // [NEW] Active Mode
+  
+  // Generative Planning State
+  bool _isPlanning = false;
+  bool _waitingForPlanConfirmation = false;
+  SequencePlan? _currentPlan;
+  String _planGoal = '';
+  final List<String> _planContext = []; 
+  
   bool _showTaskList = false;
   final ScrollController _chatScroll = ScrollController();
 
@@ -309,6 +318,9 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
 
       setState(() {
         _robot = RobotService(ollama: ollama, ollamaEmbed: embed, qdrant: qdrant);
+        _robot!.logs.listen((message) {
+             if (mounted) _log(message);
+        });
         if (Platform.isWindows) {
             _hid = WindowsNativeHidAdapter(); // Native Windows Input
             _log('✅ Initialized Windows Mouse/Keyboard Adapter.');
@@ -682,44 +694,80 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     final robot = _robot;
     if (robot == null) return;
 
+    debugPrint('[DESKTOP] 💤 _runIdleAnalysis: Starting...');
+    debugPrint('[DESKTOP]   visionOnlyIdle=$_visionOnlyIdle, hybridIdle=$_hybridIdle');
+
     if (!_visionOnlyIdle) {
       if (_currentUiState == null) {
+        debugPrint('[DESKTOP]   No UIState, running OCR...');
         await _runOcrOnCapture();
       }
 
       final state = _currentUiState;
-      if (state == null) return;
+      if (state == null) {
+        debugPrint('[DESKTOP]   ⚠️ Still no UIState after OCR, aborting');
+        return;
+      }
+      debugPrint('[DESKTOP]   UIState has ${state.ocrBlocks.length} OCR blocks');
     } else {
       if (_captureBytes == null) {
+        debugPrint('[DESKTOP]   No capture, preparing image...');
         await _prepareImageForOcr();
       }
       if (_captureBytes == null) {
         _log('⚠️ No capture available for vision analysis.');
         return;
       }
+      debugPrint('[DESKTOP]   Capture ready: ${_captureBytes!.length} bytes');
     }
 
     setState(() => _isIdleAnalyzing = true);
     _lastIdleAnalysisTime = DateTime.now();
     _log('💤 Idle analysis running...');
 
+    // [NEW] Fetch known items to prevent relearning loop
+    Set<String> known = {};
+    if (!_visionOnlyIdle && _currentUiState != null) {
+        debugPrint('[DESKTOP]   Fetching known interactive elements...');
+        known = await robot.fetchKnownInteractiveElements(_currentUiState!);
+        debugPrint('[DESKTOP]   Known elements (${known.length}): $known');
+    }
+
     try {
       final imageBase64 = _captureBytes == null ? null : base64Encode(_captureBytes!);
-      final result = _visionOnlyIdle
-          ? (imageBase64 == null
-              ? IdleAnalysisResult()
-              : await robot.analyzeIdlePageVisionOnly(
-                  imageBase64: imageBase64,
-                ))
-          : (_hybridIdle && imageBase64 != null
-              ? await robot.analyzeIdlePageHybrid(
-                  imageBase64: imageBase64,
-                  labels: await _extractHybridLabels(),
-                )
-              : await robot.analyzeIdlePage(
-                  _currentUiState!,
-                  imageBase64: imageBase64,
-                ));
+      debugPrint('[DESKTOP]   imageBase64 length: ${imageBase64?.length ?? 0}');
+      
+      IdleAnalysisResult result;
+      
+      if (_visionOnlyIdle) {
+        debugPrint('[DESKTOP]   MODE: visionOnlyIdle');
+        result = imageBase64 == null
+            ? IdleAnalysisResult()
+            : await robot.analyzeIdlePageVisionOnly(
+                imageBase64: imageBase64,
+              );
+      } else if (_hybridIdle && imageBase64 != null) {
+        debugPrint('[DESKTOP]   MODE: hybridIdle');
+        final labels = await _extractHybridLabels();
+        debugPrint('[DESKTOP]   Extracted ${labels.length} hybrid labels');
+        if (labels.isNotEmpty) {
+          debugPrint('[DESKTOP]   First 5 labels: ${labels.take(5).join(', ')}');
+        }
+        result = await robot.analyzeIdlePageHybrid(
+            imageBase64: imageBase64,
+            labels: labels,
+            knownGoals: known.toList(),
+          );
+      } else {
+        debugPrint('[DESKTOP]   MODE: standard analyzeIdlePage');
+        result = await robot.analyzeIdlePage(
+            _currentUiState!,
+            imageBase64: imageBase64,
+          );
+      }
+      
+      debugPrint('[DESKTOP]   Analysis complete: ${result.learnedItems.length} learned, ${result.messages.length} questions');
+      
       if (DateTime.now().difference(_lastInteractionTime).inSeconds < 10) {
         _log('⚠️ Idle analysis discarded due to user activity.');
         return;
@@ -810,10 +858,125 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
+  // --- GENERATIVE PLANNING UI ---
+  
+  Future<void> _startPlanning(String goal) async {
+      setState(() {
+          _isPlanning = true;
+          _planGoal = goal;
+          _planContext.clear();
+          _waitingForPlanConfirmation = false;
+          _currentPlan = null;
+          
+          _messages.add(_DesktopChatMessage(sender: 'User', text: '/plan $goal'));
+          _messages.add(_DesktopChatMessage(sender: 'Robot', text: 'Thinking about plan for "$goal"...', isLoading: true));
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      
+      await _executeDraft();
+  }
+  
+  Future<void> _executeDraft() async {
+      final robot = _robot;
+      if (robot == null) return;
+      
+      try {
+          String effectiveGoal = _planGoal;
+          if (_planContext.isNotEmpty) {
+              effectiveGoal += "\n\nAdditional User Context:\n${_planContext.join('\n')}";
+          }
+          
+          final state = _currentUiState ?? UIState(
+                ocrBlocks: [],
+                imageWidth: 0,
+                imageHeight: 0,
+                derived: const DerivedFlags(
+                    hasModalCandidate: false,
+                    hasErrorCandidate: false,
+                    modalKeywords: [],
+                ),
+                createdAt: DateTime.now(),
+          );
+          final plan = await robot.draftSequence(goal: effectiveGoal, state: state);
+          
+          setState(() {
+              _currentPlan = plan;
+          });
+          
+          if (plan.questions.isNotEmpty) {
+              _replaceLastMessage('Robot', "I have some questions to refine the plan:\n\n❓ ${plan.questions.first}");
+          } else {
+              String summary = "Proposed Plan for '$_planGoal':\n";
+              for (int i = 0; i < plan.steps.length; i++) {
+                 final s = plan.steps[i];
+                 summary += "${i + 1}. ${s.action} ${s.target} (${s.reasoning})\n";
+              }
+              summary += "\nDo you want to save this sequence? (yes/no)";
+              
+              _replaceLastMessage('Robot', summary);
+              setState(() => _waitingForPlanConfirmation = true);
+          }
+          
+      } catch (e) {
+          _replaceLastMessage('Robot', "Planning failed: $e");
+          setState(() => _isPlanning = false);
+      }
+  }
+
+  void _handlePlanningInput(String text) {
+      setState(() {
+          _messages.add(_DesktopChatMessage(sender: 'User', text: text));
+          _messages.add(_DesktopChatMessage(sender: 'Robot', text: 'Thinking...', isLoading: true));
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+
+      if (_waitingForPlanConfirmation) {
+          if (text.toLowerCase().startsWith('y')) {
+               _saveCurrentPlan();
+          } else {
+              _replaceLastMessage('Robot', "Plan cancelled.");
+              setState(() => _isPlanning = false);
+          }
+          return;
+      }
+      
+      final lastQ = _currentPlan?.questions.firstOrNull ?? "Unknown Question";
+      _planContext.add("Q: $lastQ\nA: $text");
+      
+      _executeDraft(); 
+  }
+  
+  Future<void> _saveCurrentPlan() async {
+      if (_currentPlan == null || _robot == null) return;
+      try {
+          await _robot!.savePlanAsSequence(_currentPlan!);
+          _replaceLastMessage('Robot', "✅ Sequence saved! Execution logic coming soon.");
+      } catch (e) {
+          _replaceLastMessage('Robot', "Failed to save: $e");
+      } finally {
+          setState(() => _isPlanning = false);
+      }
+  }
+
   Future<void> _sendChat() async {
     final text = _chatController.text.trim();
     if (text.isEmpty) return;
     _resetIdleTimer();
+
+    if (text.startsWith('/plan ')) {
+        final goal = text.substring(6).trim();
+        if (goal.isNotEmpty) {
+            _startPlanning(goal);
+            _chatController.clear();
+            return;
+        }
+    }
+    
+    if (_isPlanning) {
+         _handlePlanningInput(text);
+         _chatController.clear();
+         return;
+    }
 
     final lastQuestion = _lastRobotQuestion;
 
@@ -2069,7 +2232,7 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                   minLines: 1,
                   maxLines: 4,
                   decoration: const InputDecoration(
-                    hintText: 'Ask the robot a question (Enter to Send, Ctrl+Enter for Newline)...',
+                    hintText: 'Type message or /plan <Task> to start planning...',
                     border: OutlineInputBorder(),
                   ),
                   // onSubmitted: (_) => _sendChat(), // Removed to avoid conflict with Shortcut

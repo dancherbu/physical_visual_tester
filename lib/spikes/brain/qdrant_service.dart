@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class QdrantService {
@@ -23,6 +24,11 @@ class QdrantService {
     final url = baseUrl.resolve('/collections/$collectionName/points');
     final pointId = DateTime.now().millisecondsSinceEpoch; // Simple ID generation
 
+    // [DEBUG] Log what we're saving
+    final targetText = payload['action']?['target_text'] ?? 'N/A';
+    final goal = payload['goal'] ?? 'N/A';
+    debugPrint('[QDRANT] 💾 SAVE MEMORY: goal="$goal", target="$targetText", embedding_dim=${embedding.length}');
+
     final body = jsonEncode({
       'points': [
         {
@@ -41,13 +47,17 @@ class QdrantService {
 
     if (resp.statusCode == 404) {
       // Auto-create collection and retry
+      debugPrint('[QDRANT] ⚠️ Collection not found, creating...');
       await createCollection();
       return saveMemory(embedding: embedding, payload: payload);
     }
 
     if (resp.statusCode >= 300) {
+      debugPrint('[QDRANT] ❌ SAVE FAILED: ${resp.statusCode} - ${resp.body}');
       throw StateError('Qdrant save failed: ${resp.body}');
     }
+    
+    debugPrint('[QDRANT] ✅ SAVE SUCCESS: pointId=$pointId, status=${resp.statusCode}');
   }
 
   /// Creates the collection with standard configuration (768 dim, Cosine)
@@ -78,6 +88,8 @@ class QdrantService {
   }) async {
     final url = baseUrl.resolve('/collections/$collectionName/points/search');
     
+    debugPrint('[QDRANT] 🔍 SEARCH: embedding_dim=${queryEmbedding.length}, limit=$limit');
+    
     final body = jsonEncode({
       'vector': queryEmbedding,
       'limit': limit,
@@ -91,15 +103,27 @@ class QdrantService {
     );
 
     if (resp.statusCode == 404) {
+        debugPrint('[QDRANT] ⚠️ SEARCH: Collection not found, returning empty');
         return []; // Collection missing means no results
     }
 
     if (resp.statusCode >= 300) {
+      debugPrint('[QDRANT] ❌ SEARCH FAILED: ${resp.statusCode} - ${resp.body}');
       throw StateError('Qdrant search failed: ${resp.body}');
     }
 
     final decoded = jsonDecode(resp.body);
     final result = decoded['result'] as List;
+    
+    // [DEBUG] Log search results
+    debugPrint('[QDRANT] ✅ SEARCH RESULTS: ${result.length} matches');
+    for (final r in result) {
+      final score = r['score'];
+      final payload = r['payload'] as Map<String, dynamic>?;
+      final target = payload?['action']?['target_text'] ?? 'N/A';
+      debugPrint('[QDRANT]   - score=$score, target="$target"');
+    }
+    
     return result.cast<Map<String, dynamic>>();
   }
 

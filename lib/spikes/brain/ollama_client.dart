@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class OllamaClient {
@@ -23,6 +24,19 @@ class OllamaClient {
     final url = baseUrl.resolve('/api/generate');
 
     if (images != null && images.isNotEmpty) {
+      // [DEBUG] Vision model request logging
+      debugPrint('[OLLAMA VISION] 🖼️ GENERATE REQUEST');
+      debugPrint('[OLLAMA VISION]   model: $model');
+      debugPrint('[OLLAMA VISION]   prompt_len: ${prompt.length} chars');
+      debugPrint('[OLLAMA VISION]   prompt_preview: ${prompt.substring(0, prompt.length > 200 ? 200 : prompt.length)}...');
+      debugPrint('[OLLAMA VISION]   images: ${images.length} image(s)');
+      for (var i = 0; i < images.length; i++) {
+        debugPrint('[OLLAMA VISION]   image[$i] base64_len: ${images[i].length} chars');
+      }
+      debugPrint('[OLLAMA VISION]   numPredict: $numPredict, temperature: $temperature');
+      
+      final stopwatch = Stopwatch()..start();
+      
       final response = await _retryRequest(() async {
         final client = http.Client();
         try {
@@ -49,13 +63,24 @@ class OllamaClient {
           client.close();
         }
       });
+      
+      stopwatch.stop();
+      debugPrint('[OLLAMA VISION] ⏱️ Response received in ${stopwatch.elapsed.inSeconds}s');
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint('[OLLAMA VISION] ❌ HTTP ERROR: ${response.statusCode}');
+        debugPrint('[OLLAMA VISION]   body: ${response.body}');
         throw StateError('Ollama HTTP ${response.statusCode}: ${response.body}');
       }
 
       final json = jsonDecode(response.body);
-      return json['response']?.toString() ?? '';
+      final result = json['response']?.toString() ?? '';
+      
+      debugPrint('[OLLAMA VISION] ✅ RESPONSE SUCCESS');
+      debugPrint('[OLLAMA VISION]   response_len: ${result.length} chars');
+      debugPrint('[OLLAMA VISION]   response_preview: ${result.substring(0, result.length > 500 ? 500 : result.length)}');
+      
+      return result;
     }
 
     final request = http.Request('POST', url);
@@ -104,6 +129,7 @@ class OllamaClient {
   Future<List<double>> embed({
     required String prompt,
   }) async {
+    debugPrint('[OLLAMA] 🔤 EMBED: model=$model, prompt_len=${prompt.length}');
     final url = baseUrl.resolve('/api/embeddings');
     final response = await _retryRequest(() async {
       final client = http.Client();
@@ -127,6 +153,7 @@ class OllamaClient {
     });
 
     if (response.statusCode != 200) {
+      debugPrint('[OLLAMA] ❌ EMBED FAILED: ${response.statusCode} ${response.body}');
       throw StateError('Ollama embed failed: ${response.statusCode} ${response.body}');
     }
 
@@ -134,9 +161,11 @@ class OllamaClient {
     final embedding = (json['embedding'] as List).cast<double>();
     
     if (embedding.isEmpty) {
+        debugPrint('[OLLAMA] ❌ EMBED returned EMPTY embedding!');
         throw StateError("Ollama returned empty embedding for model '$model'.");
     }
     
+    debugPrint('[OLLAMA] ✅ EMBED SUCCESS: dim=${embedding.length}');
     return embedding;
   }
 
