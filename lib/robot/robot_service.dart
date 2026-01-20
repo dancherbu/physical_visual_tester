@@ -1453,6 +1453,21 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
 
        int stepOrder = 0;
        for (final frame in session.frames) {
+           // Prefer recorded HID action over hypothesis
+           if (frame.recordedAction != null) {
+               await saveSequenceStep(
+                   sequenceId: sequenceId,
+                   stepOrder: stepOrder,
+                   goal: frame.recordedAction!.toString(),
+                   action: frame.recordedAction!.toActionPayload(),
+                   description: 'Recorded action: ${frame.recordedAction}',
+                   targetText: frame.recordedAction!.targetText,
+               );
+               stepOrder++;
+               continue;
+           }
+           
+           // Fallback to hypothesis-based action
            final hyp = frame.hypothesis;
            if (hyp == null) continue;
            if (hyp.suggestedAction == null && !hyp.goal.contains('Complete')) continue;

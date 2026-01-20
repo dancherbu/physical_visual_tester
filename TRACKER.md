@@ -163,11 +163,11 @@ The Robot runs a continuous loop:
     - [x] During recall, prefer matches that share spatial context with current view.
     - [x] Helps disambiguate multiple elements with the same text.
 
-- [ ] **5. Recording Mode (Watch & Learn - Enhanced):**
-    - [ ] User performs a task; robot records screen + HID events.
-    - [ ] At end, robot summarizes: "I saw you click X, then type Y, then click Z."
-    - [ ] User confirms or corrects; robot saves as named Sequence.
-    - [ ] (Builds on Phase 1.6 but outputs a replayable Sequence, not isolated memories.)
+- [x] **5. Recording Mode (Watch & Learn - Enhanced):**
+    - [x] User performs a task; robot records screen + HID events.
+    - [x] At end, robot summarizes: "I saw you click X, then type Y, then click Z."
+    - [x] User confirms or corrects; robot saves as named Sequence.
+    - [x] (Builds on Phase 1.6 but outputs a replayable Sequence, not isolated memories.)
 
 ## Current Priorities (Jan 2026)
 1.  - [x] **Rewrite Key Components:** Logic moved from `VisionSpikePage` to `RobotTester`; Legacy OCR loop (`EyeActionsLogView`) disabled.
