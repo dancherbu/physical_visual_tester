@@ -1645,6 +1645,187 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
   }
 
   // ============================================================
+  // SMART WAITS & SYNCHRONIZATION - Phase 2.5
+  // ============================================================
+
+  /// Waits until the specified [targetText] appears on screen.
+  /// 
+  /// Polls [captureState] at [pollInterval] until text is found or [timeout] expires.
+  /// Returns the [UIState] where text was found, or null if timeout.
+  Future<UIState?> waitForTextAppears({
+    required String targetText,
+    required Future<UIState?> Function() captureState,
+    Duration timeout = const Duration(seconds: 10),
+    Duration pollInterval = const Duration(milliseconds: 500),
+    void Function(String message)? onProgress,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    final searchLower = targetText.toLowerCase();
+
+    while (stopwatch.elapsed < timeout) {
+        final state = await captureState();
+        if (state != null) {
+            final found = state.ocrBlocks.any(
+                (b) => b.text.toLowerCase().contains(searchLower)
+            );
+            if (found) {
+                onProgress?.call('✅ Found "$targetText" after ${stopwatch.elapsed.inMilliseconds}ms');
+                return state;
+            }
+        }
+        onProgress?.call('⏳ Waiting for "$targetText"... (${stopwatch.elapsed.inSeconds}s)');
+        await Future.delayed(pollInterval);
+    }
+
+    onProgress?.call('⚠️ Timeout waiting for "$targetText"');
+    return null;
+  }
+
+  /// Waits until the screen content changes from [initialState].
+  /// 
+  /// Uses Jaccard similarity - returns when similarity drops below [changeThreshold].
+  Future<UIState?> waitForScreenChange({
+    required UIState initialState,
+    required Future<UIState?> Function() captureState,
+    Duration timeout = const Duration(seconds: 10),
+    Duration pollInterval = const Duration(milliseconds: 500),
+    double changeThreshold = 0.90,
+    void Function(String message)? onProgress,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    final initialText = initialState.ocrBlocks.map((b) => b.text).toSet();
+
+    while (stopwatch.elapsed < timeout) {
+        await Future.delayed(pollInterval);
+        
+        final state = await captureState();
+        if (state == null) continue;
+        
+        final currentText = state.ocrBlocks.map((b) => b.text).toSet();
+        final intersection = initialText.intersection(currentText).length;
+        final union = initialText.union(currentText).length;
+        final similarity = union > 0 ? intersection / union : 1.0;
+
+        if (similarity < changeThreshold) {
+            onProgress?.call('✅ Screen changed (${((1 - similarity) * 100).toStringAsFixed(0)}% different) after ${stopwatch.elapsed.inMilliseconds}ms');
+            return state;
+        }
+        
+        onProgress?.call('⏳ Waiting for screen change... (${(similarity * 100).toStringAsFixed(0)}% similar)');
+    }
+
+    onProgress?.call('⚠️ Timeout waiting for screen change');
+    return null;
+  }
+
+  /// Waits until the specified [targetText] disappears from screen.
+  /// 
+  /// Useful for waiting for dialogs to close or loading spinners to finish.
+  Future<UIState?> waitForTextDisappears({
+    required String targetText,
+    required Future<UIState?> Function() captureState,
+    Duration timeout = const Duration(seconds: 10),
+    Duration pollInterval = const Duration(milliseconds: 500),
+    void Function(String message)? onProgress,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    final searchLower = targetText.toLowerCase();
+
+    while (stopwatch.elapsed < timeout) {
+        final state = await captureState();
+        if (state != null) {
+            final stillPresent = state.ocrBlocks.any(
+                (b) => b.text.toLowerCase().contains(searchLower)
+            );
+            if (!stillPresent) {
+                onProgress?.call('✅ "$targetText" disappeared after ${stopwatch.elapsed.inMilliseconds}ms');
+                return state;
+            }
+        }
+        onProgress?.call('⏳ Waiting for "$targetText" to disappear...');
+        await Future.delayed(pollInterval);
+    }
+
+    onProgress?.call('⚠️ Timeout waiting for "$targetText" to disappear');
+    return null;
+  }
+
+  // ============================================================
+  // REGION GROUPING - Phase 2.5
+  // ============================================================
+
+  /// Finds an element by text, optionally constraining to a specific region.
+  /// 
+  /// [regionContaining] - If provided, only search within regions containing this text.
+  /// Example: findElementInRegion(state, "OK", regionContaining: "Confirm Delete")
+  /// to find the OK button specifically in the "Confirm Delete" dialog.
+  OcrBlock? findElementInRegion(
+    UIState state,
+    String targetText, {
+    String? regionContaining,
+    double proximityThreshold = 50.0,
+  }) {
+    final searchLower = targetText.toLowerCase();
+    
+    if (regionContaining == null) {
+      // Simple search without region constraint
+      for (final block in state.ocrBlocks) {
+        if (block.text.toLowerCase().contains(searchLower)) {
+          return block;
+        }
+      }
+      return null;
+    }
+
+    // Region-aware search
+    final regions = RegionGrouper.groupByProximity(
+      state.ocrBlocks, 
+      proximityThreshold: proximityThreshold,
+    );
+    
+    final regionLower = regionContaining.toLowerCase();
+    
+    // Find the region containing the context text
+    for (final region in regions) {
+      if (region.containsText(regionLower)) {
+        // Search for target within this region
+        final found = region.findBlock(targetText);
+        if (found != null) return found;
+      }
+    }
+    
+    // Fallback: try simple search
+    for (final block in state.ocrBlocks) {
+      if (block.text.toLowerCase().contains(searchLower)) {
+        return block;
+      }
+    }
+    
+    return null;
+  }
+
+  /// Gets the region containing a specific element.
+  /// 
+  /// Useful for understanding context: "This button is inside this dialog."
+  OcrRegion? getRegionForElement(
+    UIState state,
+    OcrBlock element, {
+    double proximityThreshold = 50.0,
+  }) {
+    final regions = RegionGrouper.groupByProximity(
+      state.ocrBlocks, 
+      proximityThreshold: proximityThreshold,
+    );
+    
+    for (final region in regions) {
+      if (region.blocks.contains(element)) {
+        return region;
+      }
+    }
+    return null;
+  }
+
+  // ============================================================
   // SEQUENCE MEMORY (Task Chains) - Phase 2.5
   // ============================================================
 

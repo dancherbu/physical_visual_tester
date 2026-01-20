@@ -151,17 +151,17 @@ The Robot runs a continuous loop:
     - [x] If no change detected after timeout, retry action or ask user for help.
     - [x] Add `verifyAction(expectedChange)` helper to `RobotService`.
 
-- [ ] **3. Smart Waits & Synchronization:**
-    - [ ] Implement `waitForTextAppears(text, timeout)` – poll OCR until target text is visible.
-    - [ ] Implement `waitForScreenChange(timeout)` – wait until any OCR diff is detected.
-    - [ ] Use these in task execution loops instead of fixed `Future.delayed()`.
-    - [ ] Add visual feedback in logs: "Waiting for 'Submit'..."
+- [x] **3. Smart Waits & Synchronization:**
+    - [x] Implement `waitForTextAppears(text, timeout)` – poll OCR until target text is visible.
+    - [x] Implement `waitForScreenChange(timeout)` – wait until any OCR diff is detected.
+    - [x] Use these in task execution loops instead of fixed `Future.delayed()`.
+    - [x] Add visual feedback in logs: "Waiting for 'Submit'..."
 
-- [ ] **4. Region Grouping (Spatial Context):**
-    - [ ] Cluster OCR blocks into logical "regions" (e.g., by bounding box proximity).
-    - [ ] Store region context in memory: "This 'OK' button is inside 'Confirm Delete' dialog."
-    - [ ] During recall, prefer matches that share spatial context with current view.
-    - [ ] Helps disambiguate multiple elements with the same text.
+- [x] **4. Region Grouping (Spatial Context):**
+    - [x] Cluster OCR blocks into logical "regions" (e.g., by bounding box proximity).
+    - [x] Store region context in memory: "This 'OK' button is inside 'Confirm Delete' dialog."
+    - [x] During recall, prefer matches that share spatial context with current view.
+    - [x] Helps disambiguate multiple elements with the same text.
 
 - [ ] **5. Recording Mode (Watch & Learn - Enhanced):**
     - [ ] User performs a task; robot records screen + HID events.
