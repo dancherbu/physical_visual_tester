@@ -17,6 +17,7 @@ import '../hid/windows_hid_adapter.dart';
 import '../robot/robot_service.dart';
 import '../robot/training_model.dart';
 import '../robot/brain_stats_page.dart';
+import '../robot/sequences_page.dart';
 import '../spikes/brain/ollama_client.dart';
 import '../spikes/brain/qdrant_service.dart';
 import '../spikes/filesystem_indexer.dart';
@@ -2133,6 +2134,13 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                     }
                     Navigator.push(context, MaterialPageRoute(builder: (_) => BrainStatsPage(robot: _robot!)));
                 }
+                if (value == 'sequences') {
+                    if (_robot == null) {
+                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Robot not connected.")));
+                         return;
+                    }
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => SequencesPage(robot: _robot!)));
+                }
               },
               itemBuilder: (context) => [
                 CheckedPopupMenuItem(
@@ -2143,6 +2151,10 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                 const PopupMenuItem(
                    value: 'brain_stats',
                    child: Text('🧠 Brain Statistics'),
+                ),
+                const PopupMenuItem(
+                   value: 'sequences',
+                   child: Text('📋 Saved Sequences'),
                 ),
               ],
             ),
