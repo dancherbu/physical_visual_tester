@@ -171,5 +171,13 @@ class QdrantService {
           throw StateError('Failed to delete collection: ${resp.body}');
       }
   }
+
+  Future<void> ensureCollectionExists() async {
+      final url = baseUrl.resolve('/collections/$collectionName');
+      final resp = await _http.get(url);
+      if (resp.statusCode == 404) {
+          await createCollection();
+      }
+  }
 }
 

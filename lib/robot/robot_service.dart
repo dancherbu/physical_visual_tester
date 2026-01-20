@@ -46,12 +46,24 @@ class RobotService {
   final OllamaClient ollamaEmbed; // [NEW]
   final QdrantService qdrant;
   
-  Future<Map<String, bool>> checkHealth() async {
+  Future<Map<String, dynamic>> checkHealth() async {
     final ollamaOk = await ollama.ping();
     final qdrantOk = await qdrant.ping();
+    
+    int vectors = 0;
+    if (qdrantOk) {
+        try {
+            final info = await qdrant.getCollectionInfo();
+            vectors = info['points_count'] as int? ?? 0;
+        } catch (_) {
+            vectors = -1; // Collection missing or error
+        }
+    }
+    
     return {
       'ollama': ollamaOk,
       'qdrant': qdrantOk,
+      'vectors': vectors,
     };
   }
   
@@ -229,6 +241,14 @@ class RobotService {
           debugPrint("Memory Fetch Error: $e");
           return {};
       }
+  }
+
+  /// Flushes all memories from the vector database.
+  Future<void> clearAllMemories() async {
+      debugPrint("[ROBOT] Clearing all memories/vectors...");
+      await qdrant.deleteCollection(); 
+      // Re-create immediately so it's ready
+      await qdrant.ensureCollectionExists(); 
   }
   
   // Verifys if we know how to do a user's instruction

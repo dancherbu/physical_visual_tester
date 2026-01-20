@@ -258,11 +258,31 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
       if (_robot == null) return;
       try {
           final health = await _robot!.checkHealth();
-           setState(() {
-              _connected = (health['ollama'] == true) && (health['qdrant'] == true);
-           });
-      } catch (_) {
+          final ollama = health['ollama'] == true;
+          final qdrant = health['qdrant'] == true;
+          final vectors = health['vectors'] as int? ?? 0;
+          
+          setState(() {
+              _connected = ollama && qdrant;
+          });
+          
+          if (_connected) {
+             if (vectors <= 0 && _isRobotRunning) {
+                  // Only warn if we are trying to run
+                  final msg = vectors == 0 
+                      ? "⚠️ Brain Warning: Memory is empty (0 vectors). I need to learn!" 
+                      : "⚠️ Brain Error: Qdrant collection missing. Learning will fail.";
+                  _log(msg);
+                  // Don't spam chat, maybe just log
+             }
+             _log("✅ Brain Health: Connected. $vectors memories.");
+          } else {
+              if (!ollama) _log("❌ Ollama Disconnected");
+              if (!qdrant) _log("❌ Qdrant Disconnected");
+          }
+      } catch (e) {
           setState(() => _connected = false);
+          _log("❌ Health Check Failed: $e");
       }
   }
 
@@ -787,6 +807,7 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
           _messages.add(_DesktopChatMessage(sender: 'Robot', text: nextQ));
           _awaitingUserResponse = true;
       });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
   Future<void> _sendChat() async {
@@ -807,6 +828,9 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
       _messages.add(_DesktopChatMessage(sender: 'Robot', text: 'Thinking... (0s)', isLoading: true));
       _chatController.clear();
     });
+
+    // Auto-scroll to latest message
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
     final robot = _robot;
     if (robot == null) {
@@ -2121,6 +2145,44 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
         ]
       ],
     );
+  }
+
+  void _scrollToBottom() {
+    if (_chatScroll.hasClients) {
+      // With reverse: true, offset 0 is the bottom (latest messages)
+      _chatScroll.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  Future<void> _flushMemory() async {
+      final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+              title: const Text('⚠️ Flush Memory?'),
+              content: const Text('This will delete ALL learned vectors/memories from Qdrant.\nThis cannot be undone. Are you sure?'),
+              actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                  TextButton(
+                      style: TextButton.styleFrom(foregroundColor: Colors.red),
+                      onPressed: () => Navigator.pop(ctx, true), 
+                      child: const Text('Delete All')
+                  ),
+              ],
+          )
+      );
+
+      if (confirm == true && _robot != null) {
+          await _robot!.clearAllMemories();
+          setState(() {
+              _learnedTexts.clear();
+              _messages.add(_DesktopChatMessage(sender: 'Robot', text: '♻️ Memory Flushed. I have forgotten everything.'));
+          });
+          _scrollToBottom();
+      }
   }
 
   @override
