@@ -607,6 +607,15 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     }
   }
 
+  /// Captures the screen (or loads mock) and runs OCR, returning the UIState.
+  /// Used by Sequence execution to ground actions.
+  Future<void> _captureAndOcr() async {
+    if (_useLiveScreen) {
+      await _captureScreen();
+    }
+    await _runOcrOnCapture();
+  }
+
   Future<String?> _prepareImageForOcr() async {
     if (_useLiveScreen) {
       if (_capturePath == null) {
@@ -2139,7 +2148,21 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Robot not connected.")));
                          return;
                     }
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => SequencesPage(robot: _robot!)));
+                    Navigator.push(
+                      context, 
+                      MaterialPageRoute(
+                        builder: (_) => SequencesPage(
+                          robot: _robot!,
+                          onExecuteAction: (action) async {
+                            await _executeAction(action);
+                          },
+                          onCaptureState: () async {
+                            await _captureAndOcr();
+                            return _currentUiState;
+                          },
+                        ),
+                      ),
+                    );
                 }
               },
               itemBuilder: (context) => [

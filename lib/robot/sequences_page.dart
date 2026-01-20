@@ -1,11 +1,25 @@
 import 'package:flutter/material.dart';
 import 'robot_service.dart';
+import '../vision/ocr_models.dart';
 
 /// Page to view and execute saved Sequences (Task Chains).
 class SequencesPage extends StatefulWidget {
-  const SequencesPage({super.key, required this.robot});
+  const SequencesPage({
+    super.key, 
+    required this.robot,
+    this.onExecuteAction,
+    this.onCaptureState,
+  });
 
   final RobotService robot;
+  
+  /// Callback to execute an action via HID (click, type, etc.)
+  /// If null, execution will be simulated.
+  final Future<void> Function(Map<String, dynamic> action)? onExecuteAction;
+  
+  /// Callback to capture current screen state (for grounding actions).
+  /// If null, grounding will be skipped.
+  final Future<UIState?> Function()? onCaptureState;
 
   @override
   State<SequencesPage> createState() => _SequencesPageState();
@@ -112,24 +126,19 @@ class _SequencesPageState extends State<SequencesPage> {
       return;
     }
 
-    // For now, we just simulate execution since we don't have access to HID here
-    // In a real implementation, this page would receive an executeAction callback
-    // or the robot would handle it internally.
+    // Use provided callbacks for real execution, or simulate
+    final executeAction = widget.onExecuteAction ?? (action) async {
+      debugPrint('[SEQUENCE EXEC - SIMULATED] Action: $action');
+      await Future.delayed(const Duration(milliseconds: 500));
+    };
+
+    final captureState = widget.onCaptureState ?? () async => null;
 
     try {
       await for (final event in widget.robot.executeSequence(
         sequenceId: _selectedSequence!,
-        executeAction: (action) async {
-          // Placeholder - actual HID execution would be wired here
-          debugPrint('[SEQUENCE EXEC] Action: $action');
-          await Future.delayed(const Duration(milliseconds: 500));
-          // In real implementation:
-          // await hid.executeAction(action);
-        },
-        captureState: () async {
-          // Placeholder - would capture actual screen state
-          return null;
-        },
+        executeAction: executeAction,
+        captureState: captureState,
       )) {
         setState(() {
           _executionStatus = event.message;

@@ -1439,6 +1439,38 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
            }
        }
   }
+
+   /// Converts a Training Session into a saved Sequence (Task Chain).
+   /// 
+   /// Call this after [analyzeSession] has populated hypotheses for each frame.
+   /// Returns the sequence ID (the session name normalized).
+   Future<String> saveSessionAsSequence(TrainingSession session) async {
+       // Generate a sequence ID from session name
+       final sequenceId = session.name
+           .toLowerCase()
+           .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+           .replaceAll(RegExp(r'^_+|_+$'), '');
+
+       int stepOrder = 0;
+       for (final frame in session.frames) {
+           final hyp = frame.hypothesis;
+           if (hyp == null) continue;
+           if (hyp.suggestedAction == null && !hyp.goal.contains('Complete')) continue;
+
+           await saveSequenceStep(
+               sequenceId: sequenceId,
+               stepOrder: stepOrder,
+               goal: hyp.goal,
+               action: hyp.suggestedAction ?? {'type': 'wait'},
+               description: hyp.description,
+               targetText: hyp.suggestedAction?['target_text']?.toString(),
+           );
+           stepOrder++;
+       }
+
+       debugPrint('[SEQUENCE] Saved session "${session.name}" as sequence "$sequenceId" with $stepOrder steps.');
+       return sequenceId;
+   }
   
   Future<TrainingHypothesis> _generateHypothesis(TrainingFrame prev, TrainingFrame next) async {
       // 1. Detect Changes
