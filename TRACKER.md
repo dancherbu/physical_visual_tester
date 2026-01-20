@@ -133,6 +133,42 @@ The Robot runs a continuous loop:
     - [ ] Integrate USB Capture Card.
     - [ ] Solve "Screen Glare" / Moiré issues if continuing with Camera.
 
+### Phase 2.5: Reliability & Intelligence (Jan 2026)
+**Goal:** Bridge the gap between PVT's vision-based approach and traditional automation frameworks (Selenium). Focus on reliability, determinism, and intelligent execution.
+
+**Context:** Unlike Selenium (which uses DOM/Accessibility APIs for exact element access), PVT works with pixels/OCR. This is more universal but introduces ambiguity and timing issues. The following features address these gaps.
+
+- [ ] **1. Sequence Memory (Task Chains):**
+    - [ ] Extend Qdrant memory schema to include `sequence_id` and `step_order` fields.
+    - [ ] When learning a multi-step task (e.g., "Login"), store each step with a link to the next.
+    - [ ] Implement `RobotService.executeSequence(sequenceId)` to replay a learned chain.
+    - [ ] Allow user to name and save sequences from recorded Training Sessions.
+    - [ ] UI: Show "Saved Sequences" in Brain Stats or Task Menu.
+
+- [ ] **2. Action Verification:**
+    - [ ] After executing any action (click, type), re-capture screen and compare to previous.
+    - [ ] Verify expected change occurred (e.g., dialog closed, new text appeared).
+    - [ ] If no change detected after timeout, retry action or ask user for help.
+    - [ ] Add `verifyAction(expectedChange)` helper to `RobotService`.
+
+- [ ] **3. Smart Waits & Synchronization:**
+    - [ ] Implement `waitForTextAppears(text, timeout)` – poll OCR until target text is visible.
+    - [ ] Implement `waitForScreenChange(timeout)` – wait until any OCR diff is detected.
+    - [ ] Use these in task execution loops instead of fixed `Future.delayed()`.
+    - [ ] Add visual feedback in logs: "Waiting for 'Submit'..."
+
+- [ ] **4. Region Grouping (Spatial Context):**
+    - [ ] Cluster OCR blocks into logical "regions" (e.g., by bounding box proximity).
+    - [ ] Store region context in memory: "This 'OK' button is inside 'Confirm Delete' dialog."
+    - [ ] During recall, prefer matches that share spatial context with current view.
+    - [ ] Helps disambiguate multiple elements with the same text.
+
+- [ ] **5. Recording Mode (Watch & Learn - Enhanced):**
+    - [ ] User performs a task; robot records screen + HID events.
+    - [ ] At end, robot summarizes: "I saw you click X, then type Y, then click Z."
+    - [ ] User confirms or corrects; robot saves as named Sequence.
+    - [ ] (Builds on Phase 1.6 but outputs a replayable Sequence, not isolated memories.)
+
 ## Current Priorities (Jan 2026)
 1.  - [x] **Rewrite Key Components:** Logic moved from `VisionSpikePage` to `RobotTester`; Legacy OCR loop (`EyeActionsLogView`) disabled.
 2.  - [x] **Implement Teach Chat:** Ensure user can effectively unblock the robot.

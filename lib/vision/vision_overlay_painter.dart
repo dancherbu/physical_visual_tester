@@ -16,6 +16,7 @@ class VisionOverlayPainter extends CustomPainter {
     this.learnedTexts = const {},
     this.recognizedTexts = const {}, // [NEW] Brain 1: Seen before (Cyan)
     this.highlightedBlock,
+    this.scaleToSize = false,
   });
 
   final List<OcrBlock> blocks;
@@ -26,6 +27,7 @@ class VisionOverlayPainter extends CustomPainter {
   final InputImageRotation rotation;
   final CameraLensDirection cameraLensDirection;
   final OcrBlock? highlightedBlock;
+  final bool scaleToSize;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -86,14 +88,24 @@ class VisionOverlayPainter extends CustomPainter {
 
       final rect = b.boundingBox;
       
-      final left = translateX(
-          rect.left, rotation, size, imageSize, cameraLensDirection);
-      final top = translateY(
-          rect.top, rotation, size, imageSize, cameraLensDirection);
-      final right = translateX(
-          rect.right, rotation, size, imageSize, cameraLensDirection);
-      final bottom = translateY(
-          rect.bottom, rotation, size, imageSize, cameraLensDirection);
+      double left, top, right, bottom;
+      if (scaleToSize) {
+         final sx = size.width / imageSize.width;
+         final sy = size.height / imageSize.height;
+         left = rect.left * sx;
+         top = rect.top * sy;
+         right = rect.right * sx;
+         bottom = rect.bottom * sy;
+      } else {
+          left = translateX(
+              rect.left, rotation, size, imageSize, cameraLensDirection);
+          top = translateY(
+              rect.top, rotation, size, imageSize, cameraLensDirection);
+          right = translateX(
+              rect.right, rotation, size, imageSize, cameraLensDirection);
+          bottom = translateY(
+              rect.bottom, rotation, size, imageSize, cameraLensDirection);
+      }
 
       final dstRect = Rect.fromLTRB(left, top, right, bottom);
 
@@ -137,10 +149,25 @@ class VisionOverlayPainter extends CustomPainter {
     // want to show where the AI originally clicked (the "Ghost" target).
     if (highlightedBlock != null) {
       final rect = highlightedBlock!.boundingBox;
-      final left = translateX(rect.left, rotation, size, imageSize, cameraLensDirection);
-      final top = translateY(rect.top, rotation, size, imageSize, cameraLensDirection);
-      final right = translateX(rect.right, rotation, size, imageSize, cameraLensDirection);
-      final bottom = translateY(rect.bottom, rotation, size, imageSize, cameraLensDirection);
+      double left, top, right, bottom;
+      if (scaleToSize) {
+         final sx = size.width / imageSize.width;
+         final sy = size.height / imageSize.height;
+         left = rect.left * sx;
+         top = rect.top * sy;
+         right = rect.right * sx;
+         bottom = rect.bottom * sy;
+      } else {
+          left = translateX(
+              rect.left, rotation, size, imageSize, cameraLensDirection);
+          top = translateY(
+              rect.top, rotation, size, imageSize, cameraLensDirection);
+          right = translateX(
+              rect.right, rotation, size, imageSize, cameraLensDirection);
+          bottom = translateY(
+              rect.bottom, rotation, size, imageSize, cameraLensDirection);
+      }
+
       final dstRect = Rect.fromLTRB(left, top, right, bottom);
 
       // Draw Cyan Box
@@ -173,7 +200,8 @@ class VisionOverlayPainter extends CustomPainter {
         oldDelegate.cameraLensDirection != cameraLensDirection ||
         oldDelegate.learnedTexts != learnedTexts ||
         oldDelegate.recognizedTexts != recognizedTexts ||
-        oldDelegate.highlightedBlock != highlightedBlock;
+        oldDelegate.highlightedBlock != highlightedBlock ||
+        oldDelegate.scaleToSize != scaleToSize;
   }
   bool _fuzzyContains(Set<String> set, String text) {
       if (set.contains(text)) return true;

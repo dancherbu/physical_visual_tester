@@ -1568,6 +1568,179 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
       await Future.delayed(const Duration(seconds: 2));
       debugPrint("Memory Optimized (Simulated). Verified Qdrant Collection Health.");
   }
+
+  // ============================================================
+  // SEQUENCE MEMORY (Task Chains) - Phase 2.5
+  // ============================================================
+
+  /// Saves a single step as part of a named sequence.
+  /// 
+  /// [sequenceId] - Unique name for this sequence (e.g., "login_flow").
+  /// [stepOrder] - The position of this step in the sequence (0-indexed).
+  /// [goal] - What this step achieves (e.g., "Type username").
+  /// [action] - The action payload (e.g., {type: 'type', target_text: 'admin'}).
+  /// [description] - Optional context or notes.
+  Future<void> saveSequenceStep({
+    required String sequenceId,
+    required int stepOrder,
+    required String goal,
+    required Map<String, dynamic> action,
+    String? description,
+    String? targetText,
+  }) async {
+    final prompt = 'Sequence: $sequenceId. Step $stepOrder. Goal: $goal.';
+    final embedding = await ollamaEmbed.embed(prompt: prompt);
+
+    await qdrant.saveMemory(
+      embedding: embedding,
+      payload: {
+        'goal': goal,
+        'action': action,
+        'description': description ?? '',
+        'sequence_id': sequenceId,
+        'step_order': stepOrder,
+        'target_text': targetText ?? action['target_text'],
+        'source': 'sequence',
+        'timestamp': DateTime.now().toIso8601String(),
+      },
+    );
+
+    debugPrint('[SEQUENCE] Saved step $stepOrder of "$sequenceId": $goal');
+  }
+
+  /// Retrieves all steps for a given sequence, ordered by step_order.
+  Future<List<SequenceStep>> getSequence(String sequenceId) async {
+    // For now, we scroll all points and filter client-side.
+    // In production, Qdrant supports filtering via payload fields.
+    final allPoints = await qdrant.getRecentPoints(limit: 500);
+    
+    final steps = <SequenceStep>[];
+    for (final point in allPoints) {
+      final payload = point['payload'] as Map<String, dynamic>?;
+      if (payload == null) continue;
+      if (payload['sequence_id'] != sequenceId) continue;
+      
+      steps.add(SequenceStep(
+        sequenceId: sequenceId,
+        stepOrder: (payload['step_order'] as num?)?.toInt() ?? 0,
+        goal: payload['goal']?.toString() ?? '',
+        action: payload['action'] is Map 
+            ? Map<String, dynamic>.from(payload['action']) 
+            : {},
+        targetText: payload['target_text']?.toString(),
+        description: payload['description']?.toString(),
+      ));
+    }
+    
+    // Sort by step_order
+    steps.sort((a, b) => a.stepOrder.compareTo(b.stepOrder));
+    return steps;
+  }
+
+  /// Lists all unique sequence IDs from memory.
+  Future<List<String>> listSequences() async {
+    final allPoints = await qdrant.getRecentPoints(limit: 500);
+    final ids = <String>{};
+    
+    for (final point in allPoints) {
+      final payload = point['payload'] as Map<String, dynamic>?;
+      if (payload == null) continue;
+      final seqId = payload['sequence_id'];
+      if (seqId != null && seqId.toString().isNotEmpty) {
+        ids.add(seqId.toString());
+      }
+    }
+    
+    return ids.toList()..sort();
+  }
+
+  /// Executes a sequence step-by-step.
+  /// 
+  /// Returns a stream of progress updates.
+  /// Caller is responsible for providing the [executeAction] callback
+  /// that actually performs HID actions.
+  Stream<SequenceExecutionEvent> executeSequence({
+    required String sequenceId,
+    required Future<void> Function(Map<String, dynamic> action) executeAction,
+    required Future<UIState?> Function() captureState,
+    Duration delayBetweenSteps = const Duration(seconds: 2),
+  }) async* {
+    final steps = await getSequence(sequenceId);
+    
+    if (steps.isEmpty) {
+      yield SequenceExecutionEvent(
+        type: SequenceEventType.error,
+        message: 'Sequence "$sequenceId" not found or empty.',
+      );
+      return;
+    }
+
+    yield SequenceExecutionEvent(
+      type: SequenceEventType.started,
+      message: 'Starting sequence "$sequenceId" with ${steps.length} steps.',
+      totalSteps: steps.length,
+    );
+
+    for (int i = 0; i < steps.length; i++) {
+      final step = steps[i];
+      
+      yield SequenceExecutionEvent(
+        type: SequenceEventType.stepStarted,
+        message: 'Step ${i + 1}: ${step.goal}',
+        currentStep: i,
+        totalSteps: steps.length,
+      );
+
+      try {
+        // Get current screen state
+        final state = await captureState();
+        
+        // Ground the action (find coordinates)
+        if (step.targetText != null && state != null) {
+          final block = state.ocrBlocks.firstWhere(
+            (b) => b.text.toLowerCase().contains(step.targetText!.toLowerCase()),
+            orElse: () => throw StateError('Target "${step.targetText}" not found on screen.'),
+          );
+          
+          final cx = block.boundingBox.left + block.boundingBox.width / 2;
+          final cy = block.boundingBox.top + block.boundingBox.height / 2;
+          step.action['x'] = cx.toInt();
+          step.action['y'] = cy.toInt();
+        }
+
+        // Execute the action
+        await executeAction(step.action);
+
+        yield SequenceExecutionEvent(
+          type: SequenceEventType.stepCompleted,
+          message: 'Completed: ${step.goal}',
+          currentStep: i,
+          totalSteps: steps.length,
+        );
+
+        // Wait before next step
+        if (i < steps.length - 1) {
+          await Future.delayed(delayBetweenSteps);
+        }
+
+      } catch (e) {
+        yield SequenceExecutionEvent(
+          type: SequenceEventType.error,
+          message: 'Failed at step ${i + 1}: $e',
+          currentStep: i,
+          totalSteps: steps.length,
+        );
+        return; // Abort on error
+      }
+    }
+
+    yield SequenceExecutionEvent(
+      type: SequenceEventType.completed,
+      message: 'Sequence "$sequenceId" completed successfully.',
+      totalSteps: steps.length,
+    );
+  }
+
   // Helper to extract JSON from Llama's chatty response
   String _extractJson(String response) {
       // 1. Remove Markdown code blocks if present
@@ -1611,4 +1784,57 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
       }
       return clean;
   }
+}
+
+// ============================================================
+// SEQUENCE MEMORY MODELS
+// ============================================================
+
+/// Represents a single step in a learned sequence.
+class SequenceStep {
+  final String sequenceId;
+  final int stepOrder;
+  final String goal;
+  final Map<String, dynamic> action;
+  final String? targetText;
+  final String? description;
+
+  SequenceStep({
+    required this.sequenceId,
+    required this.stepOrder,
+    required this.goal,
+    required this.action,
+    this.targetText,
+    this.description,
+  });
+
+  @override
+  String toString() => 'Step $stepOrder: $goal -> ${action['type']}';
+}
+
+/// Event types for sequence execution progress.
+enum SequenceEventType {
+  started,
+  stepStarted,
+  stepCompleted,
+  error,
+  completed,
+}
+
+/// Progress event during sequence execution.
+class SequenceExecutionEvent {
+  final SequenceEventType type;
+  final String message;
+  final int? currentStep;
+  final int? totalSteps;
+
+  SequenceExecutionEvent({
+    required this.type,
+    required this.message,
+    this.currentStep,
+    this.totalSteps,
+  });
+
+  @override
+  String toString() => '[$type] $message';
 }
