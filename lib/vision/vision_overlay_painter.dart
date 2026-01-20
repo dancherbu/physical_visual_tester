@@ -14,11 +14,13 @@ class VisionOverlayPainter extends CustomPainter {
     required this.rotation,
     required this.cameraLensDirection,
     this.learnedTexts = const {},
+    this.recognizedTexts = const {}, // [NEW] Brain 1: Seen before (Cyan)
     this.highlightedBlock,
   });
 
   final List<OcrBlock> blocks;
-  final Set<String> learnedTexts;
+  final Set<String> learnedTexts; // Brain 2: Mastered (Green)
+  final Set<String> recognizedTexts; // Brain 1: Recognized (Cyan)
   final Size imageSize;
   final Size previewSize;
   final InputImageRotation rotation;
@@ -39,30 +41,47 @@ class VisionOverlayPainter extends CustomPainter {
       ..strokeWidth = 3.0
       ..color = Colors.green;
       
+    final paintRecognized = Paint() // [NEW] Cyan
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..color = Colors.cyanAccent;
+
     final paintHighlighted = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4.0
-      ..color = Colors.cyanAccent; // Cyan for the "Active" block
+      ..color = Colors.amber; // Amber for active selection
 
     // If we have a highlight, dim everything else
     final hasHighlight = highlightedBlock != null;
 
     for (final b in blocks) {
-      final isLearned = learnedTexts.contains(b.text);
+      // 1. Check Green (Learned/Mastered)
+      bool isLearned = _fuzzyContains(learnedTexts, b.text);
+      
+      // 2. Check Cyan (Recognized/Brain 1)
+      bool isRecognized = false;
+      if (!isLearned) {
+         isRecognized = _fuzzyContains(recognizedTexts, b.text);
+      }
+      
       final isHighlighted = highlightedBlock == b;
       
       Paint paintToUse;
       if (isHighlighted) {
          paintToUse = paintHighlighted;
       } else if (hasHighlight) {
-         // Dim mode: very faint
          paintToUse = Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.0
             ..color = Colors.grey.withValues(alpha: 0.2); 
       } else {
-         // Normal mode
-         paintToUse = isLearned ? paintLearned : paintUnlearned;
+         if (isLearned) {
+             paintToUse = paintLearned;
+         } else if (isRecognized) {
+             paintToUse = paintRecognized;
+         } else {
+             paintToUse = paintUnlearned;
+         }
       }
 
       final rect = b.boundingBox;
@@ -151,8 +170,18 @@ class VisionOverlayPainter extends CustomPainter {
         oldDelegate.previewSize != previewSize ||
         oldDelegate.rotation != rotation ||
         oldDelegate.cameraLensDirection != cameraLensDirection ||
+        oldDelegate.cameraLensDirection != cameraLensDirection ||
         oldDelegate.learnedTexts != learnedTexts ||
+        oldDelegate.recognizedTexts != recognizedTexts ||
         oldDelegate.highlightedBlock != highlightedBlock;
+  }
+  bool _fuzzyContains(Set<String> set, String text) {
+      if (set.contains(text)) return true;
+      final trimmed = text.trim();
+      if (set.contains(trimmed)) return true;
+      final cleaned = text.trim().replaceAll(RegExp(r"^['`\x22]+|['`\x22]+$"), '');
+      if (set.contains(cleaned)) return true;
+      return false;
   }
 }
 

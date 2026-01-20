@@ -4,8 +4,6 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
-import '../spikes/spike_store.dart';
-import '../vision/dialog_heuristics.dart';
 import '../vision/input_image_from_camera_image.dart';
 import '../vision/ocr_models.dart';
 import '../vision/vision_overlay_painter.dart';
@@ -27,17 +25,13 @@ class _EyeActionsLogViewState extends State<EyeActionsLogView> {
   String? _error;
 
   // OCR Loop State
-  bool _ocrBusy = false;
+  bool _ocrBusy = false; // Used in UI text
   Timer? _ocrTimer;
   CameraImage? _latestImage;
   int _imageWidth = 0;
   int _imageHeight = 0;
 
   List<OcrBlock> _blocks = const [];
-  UIState? _lastUiState;
-
-  // Throttle configuration
-  static const _ocrInterval = Duration(milliseconds: 500); // 2 FPS
 
   @override
   void initState() {
@@ -136,71 +130,7 @@ class _EyeActionsLogViewState extends State<EyeActionsLogView> {
 
 
 
-  Future<void> _processFrame() async {
-    if (_ocrBusy || !_streaming || _error != null) return;
 
-    final camera = _camera;
-    final image = _latestImage;
-    if (camera == null || image == null) return;
-
-    _ocrBusy = true;
-    // Don't setState just for busy flag to avoid frame jitter, unless we show a spinner
-
-    try {
-      final input = inputImageFromCameraImage(image, camera: camera);
-      if (input == null) {
-        // Platform not supported or conversion failed
-        _ocrBusy = false;
-        return;
-      }
-
-      final recognized = await _recognizer.processImage(input);
-      final blocks = <OcrBlock>[];
-
-      for (final b in recognized.blocks) {
-        final rect = b.boundingBox;
-        blocks.add(
-          OcrBlock(
-            text: b.text,
-            boundingBox: BoundingBox(
-              left: rect.left.toDouble(),
-              top: rect.top.toDouble(),
-              right: rect.right.toDouble(),
-              bottom: rect.bottom.toDouble(),
-            ),
-            confidence: null, // ML Kit doesn't expose confidence easily per block yet
-          ),
-        );
-      }
-
-      final derived = DialogHeuristics.derive(
-        blocks: blocks,
-        imageWidth: _imageWidth,
-        imageHeight: _imageHeight,
-      );
-
-      final uiState = UIState(
-        ocrBlocks: blocks,
-        imageWidth: _imageWidth,
-        imageHeight: _imageHeight,
-        derived: derived,
-        createdAt: DateTime.now(),
-      );
-
-      SpikeStore.lastUiState = uiState;
-
-      if (mounted) {
-        setState(() {
-          _blocks = blocks;
-          _lastUiState = uiState;
-        });
-      }
-    } catch (e) {
-      debugPrint('OCR Loop Error: $e');
-    } finally {
-      _ocrBusy = false;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {

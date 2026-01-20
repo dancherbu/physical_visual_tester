@@ -24,7 +24,7 @@ The Robot runs a continuous loop:
 2.  **Recall:** Query Qdrant for known UI elements/contexts in the current view.
 3.  **Decide:**
     -   *Known Context:* Execute next step towards Goal.
-    -   *Unknown Context:* **STOP** & Invoke "Teach Dialog".
+    -   *Unknown Context:* **STOP** & Invoke "Teach Chat".
 4.  **Act:** Send HID Command (Click/Type) -> Wait -> Verify Result.
 
 ## Roadmap & Tracker
@@ -34,11 +34,11 @@ The Robot runs a continuous loop:
 - [x] **Refactor Infrastructure:**
     - [x] Create `RobotService`: The main loop orchestrator.
     - [x] Create `RobotTesterPage`: A clean UI focused on the Robot's view and status logs.
-- [x] **The "Teach" Dialog:**
+- [x] **Teach Flow (Chat Overlay):**
     - [x] Design a specific UI execution interruption where the Robot presents what it sees and asks "What is this? What should I do?".
-    - [x] Implement "Teaching" flow: Save Explanation + Action to Qdrant.
+    - [x] Implement teaching flow: Save Explanation + Action to Qdrant.
 - [x] **The Loop Implementation:**
-    - [x] Implement the `Observe -> Recall -> Act` state machine.
+    - [x] Implement the `Observe -> Recall -> Decide -> Act` state machine.
     - [x] **Visual Memory Feedback:** Elements colored Green (Known) or Red (Unknown) based on Qdrant memory.
     - [x] Implement the "Unknown Item" trigger (Low confidence or no memory match).
 
@@ -90,26 +90,30 @@ The Robot runs a continuous loop:
     - [x] User uploads "Task List" (e.g., text/PDF).
     - [x] Robot parses tasks: "1. Open Chrome. 2. Go to Google..."
     - [x] Robot executes sequentially using learned actions.
-    - [x] **Completion Summary:** Report success/fail for each step.
+    - [ ] **Completion Summary:** Report success/fail for each step.
 - [ ] **Curiosity Mode (Exploration):**
     - [ ] (Future) Robot clicks unknown buttons in safe environment to learn.
 
 ### Phase 2.2: Windows Desktop Companion (Exploration)
 **Goal:** Provide a Windows desktop UI that can see real screens, use mock screens, and share the same chat-based teaching/learning loop.
 - [ ] **App Shell & UI Parity:**
-    - [ ] Create Windows desktop app shell with Robot view, status logs, and chat overlay.
-    - [ ] Support image previews in chat ("What is this?") just like mobile.
+    - [x] Create Windows desktop app shell with Robot view, status logs, and chat overlay.
+    - [ ] Support image/crop previews in chat ("What is this?") just like mobile.
+    - [ ] Highlight target element in desktop preview when teaching (parity with mobile overlay).
 - [ ] **Screen Sources:**
-    - [ ] Live screen capture from Windows desktop.
-    - [ ] Mock screen source (reuse existing mock assets).
+    - [x] Live screen capture from Windows desktop.
+    - [x] Mock screen source (reuse existing mock assets).
 - [ ] **Robot Loop Integration:**
-    - [ ] Wire to existing Observe -> Recall -> Act loop.
-    - [ ] Teach/confirm flow writes to Qdrant same as mobile.
+    - [x] Wire to existing Observe -> Recall -> Decide -> Act loop.
+    - [x] Teach/confirm flow writes to Qdrant same as mobile.
+    - [x] Desktop chat clarification -> `analyzeUserClarification` -> Qdrant learn (parity with mobile).
 - [ ] **Task Execution:**
-    - [ ] Load task lists and execute using existing plan logic.
+    - [x] Load task lists and analyze using existing plan logic.
+    - [x] Review/clarify unknown tasks before load (parity with mobile failure review loop).
+    - [ ] Execute task lists end-to-end on desktop.
     - [ ] Chat command: "Do task X" with summary responses.
 - [ ] **Local Services Connectivity:**
-    - [ ] Direct Windows networking to Ollama/Qdrant (Docker) with health checks.
+    - [x] Direct Windows networking to Ollama/Qdrant (Docker) with health checks.
     - [ ] Config for endpoints per environment.
 
 #### Session Updates (Jan 18, 2026) - Late
@@ -131,8 +135,20 @@ The Robot runs a continuous loop:
 
 ## Current Priorities (Jan 2026)
 1.  - [x] **Rewrite Key Components:** Logic moved from `VisionSpikePage` to `RobotTester`; Legacy OCR loop (`EyeActionsLogView`) disabled.
-2.  **Implement Teach Dialog:** Ensure user can effectively unblock the robot.
+2.  - [x] **Implement Teach Chat:** Ensure user can effectively unblock the robot.
 3.  **Memory Injection:** Verify Ollama/Qdrant are correctly saving/retrieving instructions.
-4.  **Desktop Companion Exploration:** Define scope for Windows desktop app and start shell + screen capture.
+4.  - [x] **Desktop Companion Exploration:** Define scope for Windows desktop app and start shell + screen capture.
 5.  - [x] **Desktop E2E Testing:** Run full end-to-end tests for the Windows desktop app (live screen, mock screens, task analysis, chat).
+
+#### Session Updates (Jan 20, 2026)
+- **Learnings**:
+    - **Desktop OCR:** Standard `tesseract` output lacks bounding boxes needed for Hybrid Vision. Switched to `tsv` output parsing to enable spatial context on Desktop.
+    - **Idle Vision:** "Red Boxes not turning Green" on Mobile was due to network disconnection/timeouts. Reduced Ollama timeouts (300s -> 12s) to fail fast and show errors.
+    - **Brain Health:** Implemented "Force Init & Heal" to fix "0 Vectors" corruption in Qdrant caused by schemaless collection creation.
+- **Completed**:
+    - [x] **Brain Statistics:** Ported `BrainStatsPage` to Desktop (View Menu) for parity.
+    - [x] **Hybird Vision:** Enabled Hybrid Idle Vision by default on Desktop.
+    - [x] **Connectivity:** Desktop app now defaults to `localhost` automatically.
+    - [x] **UI Polish:** Hidden task list by default on Desktop; Added "Brain Statistics" to View menu.
+    - [x] **Desktop OCR Fix:** Implemented TSV parsing for Tesseract to generate proper `OcrBlock`s with bounding boxes.
 

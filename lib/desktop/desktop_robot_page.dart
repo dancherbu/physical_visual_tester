@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart' as img;
@@ -12,6 +13,8 @@ import 'package:screen_capturer/screen_capturer.dart';
 import '../hid/hid_contract.dart';
 import '../hid/windows_hid_adapter.dart';
 import '../robot/robot_service.dart';
+import '../robot/training_model.dart';
+import '../robot/brain_stats_page.dart';
 import '../spikes/brain/ollama_client.dart';
 import '../spikes/brain/qdrant_service.dart';
 import '../spikes/filesystem_indexer.dart';
@@ -25,6 +28,8 @@ class DesktopRobotPage extends StatefulWidget {
 }
 
 class _DesktopRobotPageState extends State<DesktopRobotPage> {
+  static const int _vkLWin = 0x5B;
+  static const int _vkF5 = 0x74;
   RobotService? _robot;
   HidAdapter? _hid; // [NEW] Windows HID Adapter
   
@@ -49,7 +54,85 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
   DateTime _lastIdleAnalysisTime = DateTime.fromMillisecondsSinceEpoch(0);
   bool _isIdleAnalyzing = false;
   bool _idleEnabled = true;
+  bool _visionOnlyIdle = false;
+  bool _visionOnlyIdle = false;
+  bool _hybridIdle = true; // [FIX] Default to Hybrid
   bool _awaitingUserResponse = false;
+  
+  // ... (existing fields)
+
+  // ... 
+
+  Future<void> _runOcrOnCapture() async {
+    if (_isOcrRunning) return;
+    setState(() => _isOcrRunning = true);
+
+    try {
+      final path = await _prepareImageForOcr();
+
+      if (path == null) {
+        return;
+      }
+
+      // [FIX] Use TSV for bounding boxes on Desktop
+      final tsvText = await _runTesseractTsv(path);
+      final width = _imageWidth == 0 ? 1 : _imageWidth;
+      final height = _imageHeight == 0 ? 1 : _imageHeight;
+      
+      final blocks = <OcrBlock>[];
+      
+      // Parse TSV lines
+      // Tesseract TSV format: level page_num block_num par_num line_num word_num left top width height conf text
+      final lines = tsvText.split('\n');
+      for (final line in lines) {
+           if (line.trim().isEmpty) continue;
+           final parts = line.split('\t');
+           if (parts.length < 12) continue;
+           
+           // Header check
+           if (parts[0] == 'level') continue;
+           
+           final conf = double.tryParse(parts[10]) ?? 0;
+           final text = parts[11].trim();
+           
+           // Filter low confidence or empty/noise
+           if (text.isEmpty || conf < 30) continue;
+           
+           final left = double.tryParse(parts[6]) ?? 0;
+           final top = double.tryParse(parts[7]) ?? 0;
+           final w = double.tryParse(parts[8]) ?? 0;
+           final h = double.tryParse(parts[9]) ?? 0;
+           
+           blocks.add(OcrBlock(
+               text: text,
+               boundingBox: BoundingBox(left: left, top: top, right: left + w, bottom: top + h),
+               confidence: conf / 100.0
+           ));
+      }
+
+      final state = UIState(
+        ocrBlocks: blocks,
+        imageWidth: width,
+        imageHeight: height,
+        derived: const DerivedFlags(
+          hasModalCandidate: false,
+          hasErrorCandidate: false,
+          modalKeywords: [],
+        ),
+        createdAt: DateTime.now(),
+      );
+
+      setState(() {
+        _currentUiState = state;
+        _lastOcrText = blocks.map((b) => b.text).join(' '); // Approximate full text
+      });
+      
+      _log('🔎 OCR complete. ${blocks.length} elements detected.');
+
+    } finally {
+      if (mounted) setState(() => _isOcrRunning = false);
+    }
+  }
   String? _lastRobotQuestion;
 
   final Set<String> _answeredQuestions = {};
@@ -62,8 +145,12 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
   bool _isOcrRunning = false;
   bool _isTaskAnalyzing = false;
 
+  bool _isReviewingTasks = false;
+  final List<String> _taskReviewQueue = [];
+  String? _pendingTaskListRaw;
+
   bool _isRobotRunning = false; // [NEW] Active Mode
-  bool _showTaskList = true;
+  bool _showTaskList = false;
   final ScrollController _chatScroll = ScrollController();
 
   @override
@@ -71,6 +158,9 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     super.initState();
     _initAssets();
     _connectRobot();
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        _checkTesseract();
+    }
     _startIdleLoop();
   }
 
@@ -84,15 +174,29 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     super.dispose();
   }
 
+  Future<void> _checkTesseract() async {
+      try {
+          final result = await Process.run('tesseract', ['--version']);
+          if (result.exitCode != 0) {
+              _log('⚠️ Tesseract OCR is installed but threw an error.');
+          } else {
+             _log('✅ Tesseract OCR found: ${result.stdout.toString().split('\n').first}');
+          }
+      } catch (e) {
+          _log('⚠️ Tesseract OCR NOT found. Desktop OCR will not work.');
+          _log('👉 Please install Tesseract (e.g. winget install Tesseract-OCR) and add to PATH.');
+      }
+  }
+
   Future<void> _initAssets() async {
     try {
-      final manifestContent = await rootBundle.loadString('AssetManifest.json');
-      final Map<String, dynamic> manifestMap = json.decode(manifestContent);
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      final assets = manifest.listAssets();
 
       _mockAssets
         ..clear()
         ..addAll(
-          manifestMap.keys
+          assets
               .where((key) => key.contains('assets/mock/') && key.toLowerCase().endsWith('.png'))
               .toList(),
         );
@@ -100,7 +204,7 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
       _taskAssets
         ..clear()
         ..addAll(
-          manifestMap.keys
+          assets
               .where((key) => key.contains('assets/tasks/') && key.toLowerCase().endsWith('.txt'))
               .toList(),
         );
@@ -122,7 +226,18 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
          'assets/mock/file_explorer_window.png',
          'assets/mock/laptop_screen.png'
       ]);
-      _taskAssets.add('assets/tasks/login_tasks.txt');
+      _taskAssets.addAll([
+        'assets/tasks/dashboard_tasks.txt',
+        'assets/tasks/desktop_tasks.txt',
+        'assets/tasks/file_explorer_tasks.txt',
+        'assets/tasks/laptop_general_tasks.txt',
+        'assets/tasks/login_tasks.txt',
+        'assets/tasks/notepad_menu_tasks.txt',
+        'assets/tasks/notepad_write_tasks.txt',
+        'assets/tasks/ppt_tasks.txt',
+        'assets/tasks/settings_tasks.txt',
+        'assets/tasks/start_menu_tasks.txt',
+      ]);
     }
   }
 
@@ -149,7 +264,7 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     try {
       final ollama = OllamaClient(
         baseUrl: Uri.parse(_ollamaController.text.trim()),
-        model: 'llama3.2:3b',
+        model: 'moondream',
       );
       final embed = OllamaClient(
         baseUrl: Uri.parse(_ollamaController.text.trim()),
@@ -211,6 +326,180 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     });
   }
 
+  List<String> _extractLabelsFromState(UIState state) {
+    final labels = <String>{};
+    for (final block in state.ocrBlocks) {
+      final lines = block.text.split(RegExp(r'[\r\n]+'));
+      for (final line in lines) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        labels.add(trimmed);
+        final parts = trimmed.split(RegExp(r'\s{2,}|\t|\|'));
+        for (final part in parts) {
+          final p = part.trim();
+          if (p.isNotEmpty) labels.add(p);
+        }
+        final words = trimmed.split(RegExp(r'\s+'));
+        for (final word in words) {
+          final w = word.trim();
+          if (w.length >= 3 && w.length <= 32) labels.add(w);
+        }
+      }
+    }
+    return _cleanOcrLabels(labels.toList());
+  }
+
+  List<String> _cleanOcrLabels(List<String> labels) {
+    final cleaned = <String>[];
+    for (final label in labels) {
+      var l = label.trim().replaceAll(RegExp(r"^['`\x22]+|['`\x22]+$"), '');
+      if (l.isEmpty) continue;
+      if (l.length < 4) continue;
+      if (!RegExp(r'[A-Za-z]').hasMatch(l)) continue;
+      if (RegExp(r'^[0-9\.]+$').hasMatch(l)) continue;
+      if (l.contains('â') || l.contains('�')) continue;
+      final digits = RegExp(r'\d').allMatches(l).length;
+      final digitRatio = digits / l.length;
+      if (digitRatio > 0.4) continue;
+      final nonAlnum = RegExp(r'[^A-Za-z0-9\s]').allMatches(l).length;
+      if ((nonAlnum / l.length) > 0.4) continue;
+      if (RegExp(r'[~`^]').hasMatch(l)) continue;
+      cleaned.add(l);
+    }
+
+    final seen = <String>{};
+    final result = <String>[];
+    for (final l in cleaned) {
+      final key = l.toLowerCase();
+      if (seen.contains(key)) continue;
+      seen.add(key);
+      result.add(l);
+    }
+    return result;
+  }
+
+  List<Rect> _generateRois(int width, int height) {
+    final leftW = (width * 0.28).round();
+    final topH = (height * 0.18).round();
+    return [
+      Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+      Rect.fromLTWH(0, 0, leftW.toDouble(), height.toDouble()),
+      Rect.fromLTWH(0, 0, width.toDouble(), topH.toDouble()),
+      Rect.fromLTWH(leftW.toDouble(), topH.toDouble(), (width - leftW).toDouble(), (height - topH).toDouble()),
+    ];
+  }
+
+  List<Rect> _tileRoi(Rect roi, int grid, double overlap) {
+    final tiles = <Rect>[];
+    final tileW = roi.width / grid;
+    final tileH = roi.height / grid;
+    final padX = (tileW * overlap / 2).roundToDouble();
+    final padY = (tileH * overlap / 2).roundToDouble();
+
+    for (var r = 0; r < grid; r++) {
+      for (var c = 0; c < grid; c++) {
+        final bx0 = roi.left + (c * tileW);
+        final by0 = roi.top + (r * tileH);
+        final bx1 = roi.left + ((c + 1) * tileW);
+        final by1 = roi.top + ((r + 1) * tileH);
+        final tx0 = (bx0 - padX).clamp(roi.left, roi.right);
+        final ty0 = (by0 - padY).clamp(roi.top, roi.bottom);
+        final tx1 = (bx1 + padX).clamp(roi.left, roi.right);
+        final ty1 = (by1 + padY).clamp(roi.top, roi.bottom);
+        tiles.add(Rect.fromLTRB(tx0, ty0, tx1, ty1));
+      }
+    }
+    return tiles;
+  }
+
+  Future<List<String>> _extractLabelsFromCaptureTiled(String imagePath) async {
+    try {
+      final bytes = await File(imagePath).readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return [];
+
+      final rois = _generateRois(decoded.width, decoded.height);
+      final labels = <String>[];
+
+      for (final roi in rois) {
+        final tiles = _tileRoi(roi, 3, 0.3);
+        for (final tile in tiles) {
+          final crop = img.copyCrop(
+            decoded,
+            x: tile.left.round(),
+            y: tile.top.round(),
+            width: tile.width.round(),
+            height: tile.height.round(),
+          );
+
+          final scaled = img.copyResize(
+            img.grayscale(crop),
+            width: crop.width * 3,
+            height: crop.height * 3,
+            interpolation: img.Interpolation.cubic,
+          );
+
+          final tempDir = Directory.systemTemp;
+          final file = File(
+            '${tempDir.path}/pvt_ocr_tile_${DateTime.now().millisecondsSinceEpoch}.png',
+          );
+          await file.writeAsBytes(img.encodePng(scaled));
+
+          try {
+            final tsv = await _runTesseractTsv(file.path);
+            labels.addAll(_extractLabelsFromTsv(tsv));
+          } finally {
+            try {
+              if (await file.exists()) await file.delete();
+            } catch (_) {}
+          }
+        }
+      }
+
+      return _cleanOcrLabels(labels);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<String> _runTesseractTsv(String imagePath) async {
+    try {
+      final result = await Process.run(
+        'tesseract',
+        [imagePath, 'stdout', '-l', 'eng', 'tsv'],
+      );
+      if (result.exitCode != 0) {
+        return '';
+      }
+      return result.stdout.toString();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  List<String> _extractLabelsFromTsv(String tsvText) {
+    final labels = <String>[];
+    for (final line in tsvText.split('\n')) {
+      if (line.startsWith('level')) continue;
+      final parts = line.split('\t');
+      if (parts.length < 12) continue;
+      final text = parts[11].trim();
+      if (text.isEmpty) continue;
+      labels.add(text);
+    }
+    return _cleanOcrLabels(labels);
+  }
+
+  Future<List<String>> _extractHybridLabels() async {
+    if (_capturePath != null) {
+      final tiled = await _extractLabelsFromCaptureTiled(_capturePath!);
+      if (tiled.isNotEmpty) return tiled;
+    }
+    final state = _currentUiState;
+    if (state == null) return [];
+    return _extractLabelsFromState(state);
+  }
+
   Future<void> _captureScreen() async {
     if (_isCapturing) return;
     setState(() => _isCapturing = true);
@@ -251,10 +540,12 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
   }
 
   Future<String> _extractTextWithTesseract(String imagePath) async {
+    String? ocrPath;
     try {
+      ocrPath = await _preprocessImageForOcr(imagePath);
       final result = await Process.run(
         'tesseract',
-        [imagePath, 'stdout', '-l', 'eng'],
+        [ocrPath, 'stdout', '-l', 'eng'],
       );
       if (result.exitCode != 0) {
         _log('⚠️ Tesseract failed: ${result.stderr}');
@@ -264,6 +555,40 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     } catch (e) {
       _log('❌ OCR error. Install Tesseract and ensure it is in PATH.');
       return '';
+    } finally {
+      if (ocrPath != null && ocrPath != imagePath) {
+        try {
+          final file = File(ocrPath);
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<String> _preprocessImageForOcr(String imagePath) async {
+    try {
+      final bytes = await File(imagePath).readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return imagePath;
+
+      final width = decoded.width * 2;
+      final height = decoded.height * 2;
+      final resized = img.copyResize(
+        decoded,
+        width: width,
+        height: height,
+        interpolation: img.Interpolation.linear,
+      );
+      final processed = img.grayscale(resized);
+
+      final tempDir = Directory.systemTemp;
+      final outFile = File(
+        '${tempDir.path}/pvt_ocr_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+      await outFile.writeAsBytes(img.encodePng(processed));
+      return outFile.path;
+    } catch (_) {
+      return imagePath;
     }
   }
 
@@ -307,81 +632,50 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     return _capturePath;
   }
 
-  Future<void> _runOcrOnCapture() async {
-    if (_isOcrRunning) return;
-    setState(() => _isOcrRunning = true);
 
-    try {
-      final path = await _prepareImageForOcr();
-
-      if (path == null) {
-        // [FIX] Suppress log if just idle checking, or log once?
-        // _log('⚠️ No capture available for OCR.');
-        return;
-      }
-
-      final text = await _extractTextWithTesseract(path);
-      final width = _imageWidth == 0 ? 1 : _imageWidth;
-      final height = _imageHeight == 0 ? 1 : _imageHeight;
-
-      final blocks = text.trim().isEmpty
-          ? <OcrBlock>[]
-          : [
-              OcrBlock(
-                text: text.trim(),
-                boundingBox: BoundingBox(
-                  left: 0,
-                  top: 0,
-                  right: width.toDouble(),
-                  bottom: height.toDouble(),
-                ),
-              ),
-            ];
-
-      final state = UIState(
-        ocrBlocks: blocks,
-        imageWidth: width,
-        imageHeight: height,
-        derived: const DerivedFlags(
-          hasModalCandidate: false,
-          hasErrorCandidate: false,
-          modalKeywords: [],
-        ),
-        createdAt: DateTime.now(),
-      );
-
-      setState(() {
-        _currentUiState = state;
-        _lastOcrText = text.trim();
-      });
-
-      if (text.trim().isEmpty) {
-        _log('🔎 OCR complete. No text detected.');
-      } else {
-        _log('🔎 OCR complete. ${text.trim().split('\n').length} lines detected.');
-      }
-    } finally {
-      if (mounted) setState(() => _isOcrRunning = false);
-    }
-  }
 
   Future<void> _runIdleAnalysis() async {
     final robot = _robot;
     if (robot == null) return;
 
-    if (_currentUiState == null) {
-      await _runOcrOnCapture();
-    }
+    if (!_visionOnlyIdle) {
+      if (_currentUiState == null) {
+        await _runOcrOnCapture();
+      }
 
-    final state = _currentUiState;
-    if (state == null) return;
+      final state = _currentUiState;
+      if (state == null) return;
+    } else {
+      if (_captureBytes == null) {
+        await _prepareImageForOcr();
+      }
+      if (_captureBytes == null) {
+        _log('⚠️ No capture available for vision analysis.');
+        return;
+      }
+    }
 
     setState(() => _isIdleAnalyzing = true);
     _lastIdleAnalysisTime = DateTime.now();
     _log('💤 Idle analysis running...');
 
     try {
-      final result = await robot.analyzeIdlePage(state);
+      final imageBase64 = _captureBytes == null ? null : base64Encode(_captureBytes!);
+      final result = _visionOnlyIdle
+          ? (imageBase64 == null
+              ? IdleAnalysisResult()
+              : await robot.analyzeIdlePageVisionOnly(
+                  imageBase64: imageBase64,
+                ))
+          : (_hybridIdle && imageBase64 != null
+              ? await robot.analyzeIdlePageHybrid(
+                  imageBase64: imageBase64,
+                  labels: await _extractHybridLabels(),
+                )
+              : await robot.analyzeIdlePage(
+                  _currentUiState!,
+                  imageBase64: imageBase64,
+                ));
       if (DateTime.now().difference(_lastInteractionTime).inSeconds < 10) {
         _log('⚠️ Idle analysis discarded due to user activity.');
         return;
@@ -433,15 +727,17 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     if (text.isEmpty) return;
     _resetIdleTimer();
 
-    if (_lastRobotQuestion != null) {
-      _answeredQuestions.add(_lastRobotQuestion!);
+    final lastQuestion = _lastRobotQuestion;
+
+    if (lastQuestion != null) {
+      _answeredQuestions.add(lastQuestion);
       _lastRobotQuestion = null;
       _awaitingUserResponse = false;
     }
 
     setState(() {
       _messages.add(_DesktopChatMessage(sender: 'User', text: text));
-      _messages.add(_DesktopChatMessage(sender: 'Robot', text: 'Thinking...', isLoading: true));
+      _messages.add(_DesktopChatMessage(sender: 'Robot', text: 'Thinking... (0s)', isLoading: true));
       _chatController.clear();
     });
 
@@ -451,9 +747,202 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
       return;
     }
 
+    final stopwatch = Stopwatch()..start();
+    Timer? ticker;
+    ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      _replaceLastMessage('Robot', 'Thinking... (${stopwatch.elapsed.inSeconds}s)');
+    });
+
     try {
-      final reply = await robot.answerQuestion(text);
-      _replaceLastMessage('Robot', reply);
+      if (_isReviewingTasks && _taskReviewQueue.isNotEmpty) {
+        final state = _currentUiState;
+        if (state == null) {
+          _replaceLastMessage('Robot', 'I need a screen capture/OCR before I can validate those steps.');
+          return;
+        }
+
+        final currentTask = _taskReviewQueue.first;
+        final verification = await robot.decomposeAndVerify(text, state: state);
+        final isFullyCapable = verification.every((s) => s.confidence > 0.85);
+
+        _replaceLastMessage(
+          'Robot',
+          isFullyCapable
+              ? 'I understand all steps:\n${_formatVerificationSummary(verification)}'
+              : 'I have analyzed your instructions:\n${_formatVerificationSummary(verification)}',
+        );
+
+        if (isFullyCapable) {
+          await robot.learn(
+            state: state,
+            goal: currentTask,
+            action: {'type': 'instruction', 'text': text},
+            factualDescription: text,
+          );
+          setState(() => _taskReviewQueue.removeAt(0));
+          _messages.add(_DesktopChatMessage(
+            sender: 'Robot',
+            text: "I am able to perform this task. Saved to memory.",
+          ));
+          _nextTaskReviewStep();
+        } else {
+          final unknowns = verification
+              .where((s) => s.confidence <= 0.85)
+              .map((s) => s.stepDescription)
+              .toList();
+          final missingTargets = verification
+              .where((s) => s.contextVisible == false && s.targetText != null)
+              .map((s) => s.targetText!)
+              .toSet()
+              .toList();
+
+          _messages.add(_DesktopChatMessage(
+            sender: 'Robot',
+            text: 'I am not confident about: ${unknowns.join(', ')}. Please explain these steps in more detail or simplify.',
+          ));
+          if (missingTargets.isNotEmpty) {
+            _messages.add(_DesktopChatMessage(
+              sender: 'Robot',
+              text: 'Also, I can’t see: ${missingTargets.join(', ')} on the current screen. Please navigate there first.',
+            ));
+          }
+        }
+        return;
+      }
+
+      if (lastQuestion != null) {
+        final Map<String, dynamic>? lesson;
+        if (_visionOnlyIdle) {
+          lesson = await robot.analyzeUserClarificationVisionOnly(
+            userText: text,
+            lastQuestion: lastQuestion,
+          );
+        } else {
+          final state = _currentUiState;
+          if (state == null) {
+            _replaceLastMessage('Robot', 'I need a screen capture/OCR before I can learn from that answer.');
+            lesson = null;
+          } else {
+            lesson = await robot.analyzeUserClarification(
+              userText: text,
+              lastQuestion: lastQuestion,
+              state: state,
+            );
+          }
+        }
+
+        if (lesson != null) {
+          if (_visionOnlyIdle) {
+            await robot.learnVisionOnly(
+              goal: lesson['goal']?.toString() ?? 'Unknown Goal',
+              action: (lesson['action'] as Map<String, dynamic>?) ?? const {},
+              fact: lesson['fact']?.toString() ?? '',
+              context: lesson['context']?.toString(),
+            );
+          } else {
+            final state = _currentUiState;
+            if (state == null) {
+              _replaceLastMessage('Robot', 'I need a screen capture/OCR before I can learn from that answer.');
+              return;
+            }
+            await robot.learn(
+              state: state,
+              goal: lesson['goal']?.toString() ?? 'Unknown Goal',
+              action: (lesson['action'] as Map<String, dynamic>?) ?? const {},
+              factualDescription: lesson['fact']?.toString() ?? '',
+            );
+          }
+
+          final elapsed = stopwatch.elapsed.inSeconds;
+          final action = lesson['action'] as Map<String, dynamic>;
+          _replaceLastMessage(
+            'Robot',
+            "Understood! I learned to '${lesson['goal']}' by acting on '${action['target_text']}'.\nTime: ${elapsed}s",
+          );
+          return;
+        }
+      }
+
+      if (_isCommand(text)) {
+        final steps = _decomposeSimpleSteps(text);
+        if (steps.isNotEmpty) {
+          final elapsed = stopwatch.elapsed.inSeconds;
+          _replaceLastMessage('Robot', 'Thought: I will execute ${steps.length} step(s) in order.\nTime: ${elapsed}s');
+
+          for (final step in steps) {
+            setState(() {
+              _messages.add(_DesktopChatMessage(sender: 'Robot', text: 'Action: ${step.label}'));
+            });
+
+            await step.execute();
+          }
+
+          setState(() {
+            _messages.add(_DesktopChatMessage(sender: 'System', text: 'Feedback: Steps complete.'));
+          });
+
+          return;
+        }
+
+        if (_isNotepadCommand(text)) {
+          final elapsed = stopwatch.elapsed.inSeconds;
+          _replaceLastMessage('Robot', 'Thought: I will open the Run dialog, type "notepad", and press Enter.\nTime: ${elapsed}s');
+
+          setState(() {
+            _messages.add(_DesktopChatMessage(sender: 'Robot', text: 'Action: Win+R → type "notepad" → Enter'));
+          });
+
+          await _executeRunDialogCommand('notepad');
+
+          setState(() {
+            _messages.add(_DesktopChatMessage(sender: 'System', text: 'Feedback: Notepad should now be open.'));
+          });
+
+          return;
+        }
+
+        if (_currentUiState == null) {
+          _replaceLastMessage('Robot', 'I need a screen capture/OCR before I can act. Please run OCR or capture the screen first.');
+          return;
+        }
+
+        final decision = await robot
+            .think(state: _currentUiState!, currentGoal: text)
+            .timeout(const Duration(seconds: 60));
+
+        final elapsed = stopwatch.elapsed.inSeconds;
+        _replaceLastMessage('Robot', 'Thought: ${decision.reasoning}\nTime: ${elapsed}s');
+
+        if (decision.isConfident && decision.action != null) {
+          final actionSummary = _formatAction(decision.action!);
+          setState(() {
+            _messages.add(_DesktopChatMessage(sender: 'Robot', text: 'Action: $actionSummary'));
+          });
+
+          if (_hid != null) {
+            await _executeAction(decision.action!);
+            setState(() {
+              _messages.add(_DesktopChatMessage(sender: 'System', text: 'Action executed.'));
+            });
+          } else {
+            setState(() {
+              _messages.add(_DesktopChatMessage(sender: 'System', text: 'No HID adapter available to execute the action.'));
+            });
+          }
+        } else if (decision.isConfident) {
+          setState(() {
+            _messages.add(_DesktopChatMessage(sender: 'Robot', text: 'No physical action needed.'));
+          });
+        } else {
+          setState(() {
+            _messages.add(_DesktopChatMessage(sender: 'Robot', text: 'I need help: ${decision.reasoning}'));
+          });
+        }
+      } else {
+        final reply = await robot.answerQuestion(text).timeout(const Duration(seconds: 60));
+        _replaceLastMessage('Robot', '$reply\nTime: ${stopwatch.elapsed.inSeconds}s');
+      }
       
       // Delay to let user read, then ask next question if any
       Future.delayed(const Duration(seconds: 2), () {
@@ -462,7 +951,200 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
 
     } catch (e) {
       _replaceLastMessage('Robot', 'I ran into an error: $e');
+    } finally {
+      ticker?.cancel();
+      stopwatch.stop();
     }
+  }
+
+  bool _isCommand(String text) {
+    final normalized = text.trim().toLowerCase();
+    return normalized.startsWith('open ') ||
+        normalized.startsWith('click ') ||
+        normalized.startsWith('type ') ||
+        normalized.startsWith('go to ') ||
+        normalized.startsWith('press ') ||
+        normalized.startsWith('launch ') ||
+        normalized.startsWith('run ');
+  }
+
+  bool _isNotepadCommand(String text) {
+    return text.toLowerCase().contains('notepad');
+  }
+
+  List<_CommandStep> _decomposeSimpleSteps(String text) {
+    final normalized = text.trim().toLowerCase();
+    final steps = <_CommandStep>[];
+
+    if (normalized.contains('notepad')) {
+      steps.add(_CommandStep(
+        label: 'Win+R → type "notepad" → Enter',
+        execute: () async {
+          await _executeRunDialogCommand('notepad');
+          await Future.delayed(const Duration(milliseconds: 600));
+        },
+      ));
+    }
+
+    if (normalized.contains('current date') || normalized.contains('date and time')) {
+      steps.add(_CommandStep(
+        label: 'Focus Notepad (taskbar)',
+        execute: () async {
+          final ok = await _focusTaskbarApp('Notepad');
+          if (!ok) {
+            setState(() {
+              _messages.add(_DesktopChatMessage(
+                sender: 'System',
+                text: 'Could not find Notepad on the taskbar. Run OCR and try again.',
+              ));
+            });
+          }
+        },
+      ));
+
+      final stamp = _formatNow();
+      steps.add(_CommandStep(
+        label: 'Type "$stamp"',
+        execute: () async {
+          final hid = _hid;
+          if (hid == null) {
+            setState(() {
+              _messages.add(_DesktopChatMessage(sender: 'System', text: 'No HID adapter available.'));
+            });
+            return;
+          }
+          await hid.sendKeyText(stamp);
+        },
+      ));
+    }
+
+    final typeText = _extractTypeText(text);
+    if (typeText != null && typeText.isNotEmpty) {
+      steps.add(_CommandStep(
+        label: 'Type "$typeText"',
+        execute: () async {
+          final hid = _hid;
+          if (hid == null) {
+            setState(() {
+              _messages.add(_DesktopChatMessage(sender: 'System', text: 'No HID adapter available.'));
+            });
+            return;
+          }
+          await hid.sendKeyText(typeText);
+        },
+      ));
+    }
+
+    if (steps.length >= 2) return steps;
+    return const [];
+  }
+
+  Future<bool> _focusTaskbarApp(String appName) async {
+    final state = _currentUiState;
+    if (state == null) return false;
+    final lower = appName.toLowerCase();
+    try {
+      final block = state.ocrBlocks.firstWhere(
+        (b) => b.text.toLowerCase().contains(lower),
+      );
+
+      final x = (block.boundingBox.left + block.boundingBox.width / 2).round();
+      final y = (block.boundingBox.top + block.boundingBox.height / 2).round();
+      await _executeAction({'type': 'click', 'x': x, 'y': y});
+      return true;
+    } catch (_) {
+      // Fallback: try opening via Run dialog if Notepad isn't visible on taskbar
+      if (appName.toLowerCase() == 'notepad') {
+        final opened = await _openAppFromStartSearch('notepad');
+        if (!opened) {
+          await _executeRunDialogCommand('notepad');
+        }
+        await Future.delayed(const Duration(milliseconds: 600));
+        return true;
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _openAppFromStartSearch(String appName) async {
+    final hid = _hid;
+    if (hid is! WindowsNativeHidAdapter) return false;
+    await hid.sendVirtualKey(_vkLWin);
+    await Future.delayed(const Duration(milliseconds: 300));
+    await hid.sendKeyText(appName);
+    await hid.sendKeyText('\n');
+    return true;
+  }
+
+  String _formatNow() {
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}:${two(now.second)}';
+  }
+
+  String? _extractTypeText(String text) {
+    final lower = text.toLowerCase();
+    final typeIndex = lower.indexOf('type ');
+    final writeIndex = lower.indexOf('write ');
+    final index = typeIndex >= 0 ? typeIndex + 5 : (writeIndex >= 0 ? writeIndex + 6 : -1);
+    if (index < 0 || index >= text.length) return null;
+
+    var content = text.substring(index).trim();
+    if (content.toLowerCase().startsWith('"') || content.toLowerCase().startsWith('\'')) {
+      final quote = content[0];
+      final end = content.indexOf(quote, 1);
+      if (end > 1) {
+        content = content.substring(1, end);
+      }
+    }
+
+    // Remove trailing context like "into" or "in"
+    final splitters = [' into ', ' in '];
+    for (final splitter in splitters) {
+      final idx = content.toLowerCase().indexOf(splitter);
+      if (idx > 0) {
+        content = content.substring(0, idx).trim();
+      }
+    }
+
+    return content.isEmpty ? null : content;
+  }
+
+  Future<void> _executeRunDialogCommand(String command) async {
+    final hid = _hid;
+    if (hid == null) {
+      setState(() {
+        _messages.add(_DesktopChatMessage(sender: 'System', text: 'No HID adapter available.'));
+      });
+      return;
+    }
+
+    if (hid is WindowsNativeHidAdapter) {
+      await hid.sendWinR();
+      await Future.delayed(const Duration(milliseconds: 300));
+      await hid.sendKeyText(command);
+      await hid.sendKeyText('\n');
+    } else {
+      setState(() {
+        _messages.add(_DesktopChatMessage(sender: 'System', text: 'Run dialog shortcut not supported on this platform.'));
+      });
+    }
+  }
+
+  String _formatAction(Map<String, dynamic> action) {
+    final type = (action['type'] ?? 'click').toString();
+    final target = action['target_text']?.toString();
+    final text = action['target_text']?.toString();
+    if (type == 'click' && target != null) {
+      return 'Click "$target"';
+    }
+    if (type == 'keyboard_type' && text != null) {
+      return 'Type "$text"';
+    }
+    if (type == 'keyboard_key' && text != null) {
+      return 'Press "$text"';
+    }
+    return type;
   }
 
   void _replaceLastMessage(String sender, String text) {
@@ -673,12 +1355,6 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
         sender: 'Robot',
         text: 'Task analysis complete.\n\nConfidence: $percentage% ($known/$total steps).\nTasks: ${lines.length}\nNeeds help: ${unknownTasks.length}',
       ));
-      if (unknownTasks.isNotEmpty) {
-        _messages.add(_DesktopChatMessage(
-          sender: 'Robot',
-          text: 'I need help with: ${unknownTasks.join('; ')}',
-        ));
-      }
     });
 
     if (missingTargets.isNotEmpty) {
@@ -688,14 +1364,70 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
       ));
     }
 
-    if (loadAfter && unknownTasks.isEmpty) {
+    if (unknownTasks.isNotEmpty) {
+      _startTaskReview(unknownTasks, pendingRaw: loadAfter ? rawText : null);
+      if (loadAfter) {
+        _log('⚠️ Tasks not loaded until unknown steps are clarified.');
+      }
+    } else if (loadAfter) {
       robot.loadTasks(rawText);
       _log('✅ Tasks loaded (${lines.length}).');
-    } else if (loadAfter) {
-      _log('⚠️ Tasks not loaded until unknown steps are clarified.');
     }
 
     if (mounted) setState(() => _isTaskAnalyzing = false);
+  }
+
+  void _startTaskReview(List<String> tasks, {String? pendingRaw}) {
+    if (tasks.isEmpty) return;
+    setState(() {
+      _isReviewingTasks = true;
+      _taskReviewQueue
+        ..clear()
+        ..addAll(tasks);
+      _pendingTaskListRaw = pendingRaw;
+      _messages.add(_DesktopChatMessage(
+        sender: 'Robot',
+        text: 'I need help with ${tasks.length} task(s) before we proceed. Let\'s review them.',
+      ));
+    });
+    _nextTaskReviewStep();
+  }
+
+  void _nextTaskReviewStep() {
+    if (_taskReviewQueue.isEmpty) {
+      setState(() => _isReviewingTasks = false);
+      final pending = _pendingTaskListRaw;
+      _pendingTaskListRaw = null;
+      if (pending != null && _robot != null) {
+        _robot!.loadTasks(pending);
+        _log('✅ Tasks loaded (${pending.split('\n').where((l) => l.trim().isNotEmpty).length}).');
+        _messages.add(_DesktopChatMessage(
+          sender: 'Robot',
+          text: "Review complete! I\'m ready to execute. Press 'Start Active Mode' to begin.",
+        ));
+      } else {
+        _messages.add(_DesktopChatMessage(
+          sender: 'Robot',
+          text: "Review complete! I\'m ready when you are.",
+        ));
+      }
+      return;
+    }
+
+    final task = _taskReviewQueue.first;
+    _messages.add(_DesktopChatMessage(
+      sender: 'Robot',
+      text: 'Task: "$task"\n\nI\'m not confident I can complete this. Please explain the steps (e.g. "Open browser then type url").',
+    ));
+  }
+
+  String _formatVerificationSummary(List<TaskStepVerification> steps) {
+    if (steps.isEmpty) return '- No steps found.';
+    return steps.map((s) {
+      final pct = (s.confidence * 100).round();
+      final visibility = s.contextVisible == false ? ' (not visible)' : '';
+      return '- ${s.stepDescription} [$pct%]$visibility';
+    }).join('\n');
   }
 
   Future<void> _runScriptedTaskTest() async {
@@ -823,6 +1555,11 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
             if (key == 'enter' || key == 'return') toSend = '\n';
             else if (key == 'tab') toSend = '\t';
             else if (key == 'space') toSend = ' ';
+            else if (key == 'f5' && hid is WindowsNativeHidAdapter) {
+              await hid.sendVirtualKey(_vkF5);
+              _log("✅ Pressed F5.");
+              return;
+            }
             
             if (toSend != null) {
                _log("⌨️ Pressing Key: $key");
@@ -891,15 +1628,18 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
           children: [
             Switch(
               value: _useLiveScreen,
               onChanged: (val) => setState(() => _useLiveScreen = val),
             ),
             const Text('Live Screen'),
-            const SizedBox(width: 12),
-            Expanded(
+            SizedBox(
+              width: 220,
               child: DropdownButton<String>(
                 isExpanded: true,
                 hint: const Text('Select Mock Screen'),
@@ -924,8 +1664,6 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                       },
               ),
             ),
-            const SizedBox(width: 8),
-            // Button takes less space, dropdown takes more
             ElevatedButton(
               onPressed: _useLiveScreen
                   ? null
@@ -934,7 +1672,6 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                       : () => _log('🖼️ Mock screen loaded.')),
               child: const Text('Use Mock'),
             ),
-            const SizedBox(width: 8),
             ElevatedButton(
               onPressed: _showMockManagerDialog,
               child: const Icon(Icons.folder_open), // Compact
@@ -969,6 +1706,27 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
                 label: Text(_isIdleAnalyzing ? 'Analyzing...' : 'Idle Analyze'),
               ),
             ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Switch(
+              value: _visionOnlyIdle,
+              onChanged: (val) => setState(() => _visionOnlyIdle = val),
+            ),
+            const Text('Vision-only idle (no OCR)'),
+          ],
+        ),
+        Row(
+          children: [
+            Switch(
+              value: _hybridIdle,
+              onChanged: _visionOnlyIdle
+                  ? null
+                  : (val) => setState(() => _hybridIdle = val),
+            ),
+            const Text('Hybrid OCR + Vision'),
           ],
         ),
         const SizedBox(height: 8),
@@ -1109,34 +1867,54 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
               color: Colors.grey[100],
               borderRadius: BorderRadius.circular(8),
             ),
-            child: ListView.builder(
-              controller: _chatScroll,
-              reverse: true,
-              itemCount: _messages.length,
-              itemBuilder: (ctx, i) {
-                final reversedIndex = _messages.length - 1 - i;
-                final msg = _messages[reversedIndex];
-                return Align(
-                  alignment: msg.sender == 'User' ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(10),
-                    constraints: const BoxConstraints(maxWidth: 420),
-                    decoration: BoxDecoration(
-                      color: msg.sender == 'User' ? Colors.blue[100] : Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.black12),
-                    ),
-                    child: msg.isLoading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : SelectionArea(child: Text(msg.text)),
-                  ),
-                );
-              },
+            child: ScrollConfiguration(
+              behavior: const _DesktopScrollBehavior(),
+              child: Scrollbar(
+                controller: _chatScroll,
+                thumbVisibility: true,
+                interactive: true,
+                child: ListView.builder(
+                  controller: _chatScroll,
+                  reverse: true,
+                  itemCount: _messages.length,
+                  itemBuilder: (ctx, i) {
+                    final reversedIndex = _messages.length - 1 - i;
+                    final msg = _messages[reversedIndex];
+                    final isThinking = msg.isLoading;
+                    return Align(
+                      alignment: msg.sender == 'User' ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        padding: const EdgeInsets.all(10),
+                        constraints: const BoxConstraints(maxWidth: 420),
+                        decoration: BoxDecoration(
+                          color: isThinking
+                              ? Colors.amber[100]
+                              : msg.sender == 'User'
+                                  ? Colors.blue[100]
+                                  : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.black12),
+                        ),
+                        child: isThinking
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Flexible(child: Text(msg.text)),
+                                ],
+                              )
+                            : SelectionArea(child: Text(msg.text)),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
           ),
         ),
@@ -1248,12 +2026,32 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
       appBar: AppBar(
         title: const Text('PVT Desktop Companion'),
         actions: [
-            IconButton(
-                icon: const Icon(Icons.list),
-                tooltip: "Toggle Task List",
-                onPressed: () {
-                    setState(() => _showTaskList = !_showTaskList);
-                },
+            PopupMenuButton<String>(
+              tooltip: 'View',
+              icon: const Icon(Icons.view_list),
+              onSelected: (value) {
+                if (value == 'toggle_task_list') {
+                  setState(() => _showTaskList = !_showTaskList);
+                }
+                if (value == 'brain_stats') {
+                    if (_robot == null) {
+                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Robot not connected.")));
+                         return;
+                    }
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => BrainStatsPage(robot: _robot!)));
+                }
+              },
+              itemBuilder: (context) => [
+                CheckedPopupMenuItem(
+                  value: 'toggle_task_list',
+                  checked: _showTaskList,
+                  child: const Text('Show Task List'),
+                ),
+                const PopupMenuItem(
+                   value: 'brain_stats',
+                   child: Text('🧠 Brain Statistics'),
+                ),
+              ],
             ),
             IconButton(
                 icon: const Icon(Icons.settings),
@@ -1286,4 +2084,24 @@ class _DesktopChatMessage {
     required this.text,
     this.isLoading = false,
   });
+}
+
+class _CommandStep {
+  const _CommandStep({required this.label, required this.execute});
+
+  final String label;
+  final Future<void> Function() execute;
+}
+
+class _DesktopScrollBehavior extends MaterialScrollBehavior {
+  const _DesktopScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.touch,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.unknown,
+      };
 }

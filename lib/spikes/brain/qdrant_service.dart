@@ -39,8 +39,35 @@ class QdrantService {
       body: body,
     );
 
+    if (resp.statusCode == 404) {
+      // Auto-create collection and retry
+      await createCollection();
+      return saveMemory(embedding: embedding, payload: payload);
+    }
+
     if (resp.statusCode >= 300) {
       throw StateError('Qdrant save failed: ${resp.body}');
+    }
+  }
+
+  /// Creates the collection with standard configuration (768 dim, Cosine)
+  Future<void> createCollection() async {
+    final url = baseUrl.resolve('/collections/$collectionName');
+    final body = jsonEncode({
+      "vectors": {
+        "size": 768, // nomic-embed-text dimension
+        "distance": "Cosine"
+      }
+    });
+
+    final resp = await _http.put(
+        url,
+        headers: {'content-type': 'application/json'},
+        body: body
+    );
+
+    if (resp.statusCode >= 300) {
+        throw StateError("Failed to create collection: ${resp.body}");
     }
   }
 
@@ -63,6 +90,10 @@ class QdrantService {
       body: body,
     );
 
+    if (resp.statusCode == 404) {
+        return []; // Collection missing means no results
+    }
+
     if (resp.statusCode >= 300) {
       throw StateError('Qdrant search failed: ${resp.body}');
     }
@@ -81,4 +112,64 @@ class QdrantService {
       return false;
     }
   }
+
+  Future<Map<String, dynamic>> getCollectionInfo() async {
+    final url = baseUrl.resolve('/collections/$collectionName');
+    final resp = await _http.get(url);
+    
+    // [FIX] If collection doesn't exist (e.g. after wipe), return empty stats
+    if (resp.statusCode == 404) {
+        return {'points_count': 0, 'vectors_count': 0};
+    }
+
+    if (resp.statusCode >= 300) {
+      throw StateError('Qdrant info failed: ${resp.body}');
+    }
+    final json = jsonDecode(resp.body);
+    return json['result'] as Map<String, dynamic>;
+  }
+
+  Future<List<Map<String, dynamic>>> getRecentPoints({int limit = 50}) async {
+    final url = baseUrl.resolve('/collections/$collectionName/points/scroll');
+    // Scroll doesn't support Sort strictly, but we can fetch a batch and sort client-side
+    // because IDs are timestamps. Is this scalable? No. But good for "Tester".
+    final body = jsonEncode({
+      'limit': limit,
+      'with_payload': true,
+      'with_vector': false,
+    });
+
+    final resp = await _http.post(
+      url,
+      headers: {'content-type': 'application/json'},
+      body: body,
+    );
+
+    if (resp.statusCode >= 300) {
+        // If collection doesn't exist yet, return empty
+        if (resp.statusCode == 404) return [];
+        throw StateError('Qdrant scroll failed: ${resp.body}');
+    }
+    
+    final json = jsonDecode(resp.body);
+    final points = (json['result']['points'] as List).cast<Map<String, dynamic>>();
+    
+    // Sort by ID descending (Timestamp)
+    points.sort((a, b) {
+        final idA = a['id'] is int ? a['id'] as int : 0;
+        final idB = b['id'] is int ? b['id'] as int : 0;
+        return idB.compareTo(idA); 
+    });
+    
+    return points;
+  }
+  
+  Future<void> deleteCollection() async {
+      final url = baseUrl.resolve('/collections/$collectionName');
+      final resp = await _http.delete(url);
+      if (resp.statusCode >= 300) {
+          throw StateError('Failed to delete collection: ${resp.body}');
+      }
+  }
 }
+

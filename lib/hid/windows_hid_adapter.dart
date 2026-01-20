@@ -78,6 +78,22 @@ class WindowsNativeHidAdapter implements HidAdapter {
       await Future.delayed(const Duration(milliseconds: 10));
     }
   }
+
+  Future<void> sendKeyCombo(List<int> vks) async {
+    for (final vk in vks) {
+      _sendKeyDown(vk);
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    for (final vk in vks.reversed) {
+      _sendKeyUp(vk);
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+  }
+
+  Future<void> sendWinR() async {
+    const vkR = 0x52; // 'R'
+    await sendKeyCombo([VK_LWIN, vkR]);
+  }
   
   Future<void> _sendVirtualKey(int vk) async {
     final input = calloc<INPUT>();
@@ -91,6 +107,27 @@ class WindowsNativeHidAdapter implements HidAdapter {
     input.ref.ki.dwFlags = KEYEVENTF_KEYUP;
     SendInput(1, input, sizeOf<INPUT>());
     
+    free(input);
+  }
+
+  Future<void> sendVirtualKey(int vk) async {
+    await _sendVirtualKey(vk);
+  }
+
+  void _sendKeyDown(int vk) {
+    final input = calloc<INPUT>();
+    input.ref.type = INPUT_KEYBOARD;
+    input.ref.ki.wVk = vk;
+    SendInput(1, input, sizeOf<INPUT>());
+    free(input);
+  }
+
+  void _sendKeyUp(int vk) {
+    final input = calloc<INPUT>();
+    input.ref.type = INPUT_KEYBOARD;
+    input.ref.ki.wVk = vk;
+    input.ref.ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(1, input, sizeOf<INPUT>());
     free(input);
   }
 

@@ -800,5 +800,22 @@
                 "fact": "Advanced application configuration."
             }
         ]
+    },
+    {
+        "description": "Notepad - Document Area",
+        "prerequisites": [
+            "App: Notepad",
+            "Document area focused"
+        ],
+        "actions": [
+            {
+                "goal": "Insert Current Date and Time",
+                "action": {
+                    "type": "keyboard_key",
+                    "target_text": "F5"
+                },
+                "fact": "Inserts the current date/time at the cursor."
+            }
+        ]
     }
 ]

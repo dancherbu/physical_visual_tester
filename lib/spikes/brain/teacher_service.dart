@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../vision/ocr_models.dart';
 import 'ollama_client.dart';
@@ -178,6 +179,97 @@ class TeacherService {
       debugPrint('Deep analysis failed: $e');
       return {};
     }
+  }
+
+  /// Hybrid analysis: Given OCR labels, use vision to assign role/purpose.
+  Future<List<Map<String, dynamic>>> analyzeLabelsWithVision({
+    required String base64Image,
+    required List<String> labels,
+    int maxItems = 30,
+    int numPredict = 192,
+  }) async {
+    if (labels.isEmpty) return [];
+
+    final unique = <String>{};
+    final pruned = <String>[];
+    for (final l in labels) {
+      final v = l.trim();
+      if (v.isEmpty) continue;
+      final key = v.toLowerCase();
+      if (unique.add(key)) pruned.add(v);
+      if (pruned.length >= maxItems) break;
+    }
+
+    final labelList = pruned.map((l) => '"$l"').join(', ');
+    final prompt = '''
+You are analyzing a UI screenshot. For each label, assign role and purpose.
+Return ONLY valid JSON array (no object, no markdown), in this exact format:
+[
+  {"label": "...", "role": "button|tab|menu|link|input|folder|window|other", "purpose": "...", "confidence": 0.0-1.0}
+]
+
+Labels:
+[$labelList]
+''';
+
+    try {
+      final response = await ollama.generate(
+        prompt: prompt,
+        images: [base64Image],
+        numPredict: numPredict,
+        temperature: 0.1,
+      );
+      final clean = _extractJson(response);
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(clean);
+      } catch (_) {
+        decoded = null;
+      }
+
+      final items = <Map<String, dynamic>>[];
+      if (decoded is List) {
+        for (final item in decoded) {
+          if (item is Map<String, dynamic>) items.add(item);
+        }
+      }
+
+      // Fallback: parse line format "Label | role | purpose"
+      if (items.isEmpty) {
+        final lines = response.split('\n');
+        for (final line in lines) {
+          if (!line.contains('|')) continue;
+          final parts = line.split('|').map((e) => e.trim()).toList();
+          if (parts.length < 3) continue;
+          items.add({
+            'label': parts[0],
+            'role': parts[1],
+            'purpose': parts.sublist(2).join(' | '),
+            'confidence': 0.7,
+          });
+        }
+      }
+
+      return items;
+    } catch (e) {
+      debugPrint('Hybrid analysis failed: $e');
+      return [];
+    }
+  }
+
+  String _extractJson(String response) {
+    final codeBlockRegex = RegExp(r'```(?:json)?\s*([\s\S]*?)\s*```');
+    final match = codeBlockRegex.firstMatch(response);
+    if (match != null) {
+      response = match.group(1) ?? response;
+    }
+    int start = response.indexOf('[');
+    if (start == -1) start = response.indexOf('{');
+    if (start == -1) return '[]';
+    final clean = response.substring(start);
+    final end = clean.startsWith('[') ? clean.lastIndexOf(']') : clean.lastIndexOf('}');
+    if (end == -1) return clean;
+    return clean.substring(0, end + 1);
   }
   /// Compares two images to determine the effect of an action.
   Future<String> analyzeConsequence({

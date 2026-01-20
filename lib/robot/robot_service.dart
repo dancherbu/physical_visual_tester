@@ -37,9 +37,12 @@ class RobotService {
     required this.ollama,
     required this.ollamaEmbed, // [NEW]
     required this.qdrant,
-  });
+        this.ollamaVisionClient,
+    });
 
   final OllamaClient ollama;
+    final OllamaClient? ollamaVisionClient;
+    late final OllamaClient ollamaVision = ollamaVisionClient ?? ollama;
   final OllamaClient ollamaEmbed; // [NEW]
   final QdrantService qdrant;
   
@@ -432,9 +435,16 @@ class RobotService {
   // --- IDLE CURIOSITY METHODS ---
   
   /// Called periodically during user inactivity to "daydream" or analyze the screen.
-  Future<IdleAnalysisResult> analyzeIdlePage(UIState state) async {
+    Future<IdleAnalysisResult> analyzeIdlePage(
+        UIState state, {
+        String? imageBase64,
+        bool questionsOnly = false,
+        int minQuestions = 20,
+    }) async {
        // Only analyze if state has significant content (e.g. headers, windows)
        final text = state.toLLMDescription();
+      final ocrTokens = _extractOcrTokens(state);
+      final ocrList = ocrTokens.isEmpty ? '[]' : ocrTokens.map((t) => '"$t"').join(', ');
        
        // 1. Check what we already know to avoid asking dumb questions
        // [TEMP] Disable Recall to prevent Model Swapping (RAM Thrashing)
@@ -443,11 +453,60 @@ class RobotService {
        // final knownGoals = knownMemories...
        final knownGoals = ""; // Empty context for speed
 
-       final prompt = '''
+               final prompt = questionsOnly && imageBase64 != null
+                   ? '''
+               You are analyzing a CURRENT screen capture image. Output ONLY valid JSON, no markdown, no explanations.
+
+               OCR TOKEN LIST (verbatim allowed targets):
+               [$ocrList]
+
+               TASK: Generate a list of questions about UI elements you do NOT understand.
+               - Produce AT LEAST $minQuestions questions if possible
+               - Each question MUST reference an element EXACTLY from the OCR TOKEN LIST
+               - If you cannot map an element to OCR tokens, skip it
+
+               OUTPUT FORMAT (pure JSON array of strings):
+               ["What does <element> do?", "What is <element> used for?", ...]
+               '''
+                   : imageBase64 != null
+                     ? '''
+             You are analyzing a CURRENT screen capture image. Output ONLY valid JSON, no markdown, no explanations.
+
+             OCR TOKEN LIST (verbatim allowed targets):
+             [$ocrList]
+
+             ALREADY LEARNED (ignore these): [$knownGoals]
+
+            TASK: Use the IMAGE to identify actionable UI elements.
+             - If you recognize its standard function (e.g., "Save", "Close", "Settings"), create an "insight"
+             - If you don't understand its purpose, create a "question" asking what it does
+            - Try to produce AT LEAST 20 questions if the screen has enough elements
+             - CRITICAL: Any action.target_text MUST be an EXACT string from the OCR TOKEN LIST
+             - CRITICAL: Any question must reference an element EXACTLY from the OCR TOKEN LIST
+             - If you cannot map an element to OCR tokens, skip it
+
+             OUTPUT FORMAT (pure JSON, no markdown):
+             {
+                 "insights": [
+                     {
+                         "goal": "Brief action name",
+                         "action": {"type": "click", "target_text": "Exact text from current screen"},
+                         "fact": "What clicking this does"
+                     }
+                 ],
+                 "questions": ["What does [specific element from current screen] do?"]
+             }
+
+             Return {"insights": [], "questions": []} if current screen has no new elements to learn.
+             '''
+                     : '''
        You are analyzing a CURRENT screen capture. Output ONLY valid JSON, no markdown, no explanations.
        
        CURRENT SCREEN TEXT ELEMENTS:
        $text
+
+             OCR TOKEN LIST (verbatim allowed targets):
+             [$ocrList]
        
        ALREADY LEARNED (ignore these): [$knownGoals]
        
@@ -456,6 +515,8 @@ class RobotService {
        - If you don't understand its purpose, create a "question" asking what it does
        - IMPORTANT: Only analyze elements that are ACTUALLY PRESENT in the current screen text above
        - DO NOT mention elements from other screens or contexts
+             - CRITICAL: Any action.target_text MUST be an EXACT string from the OCR TOKEN LIST
+             - CRITICAL: Any question must reference an element EXACTLY from the OCR TOKEN LIST
        
        OUTPUT FORMAT (pure JSON, no markdown):
        {
@@ -470,9 +531,9 @@ class RobotService {
        }
        
        Return {"insights": [], "questions": []} if current screen has no new elements to learn.
-       ''';
+    ''';
        
-       try {
+         try {
           final stopwatch = Stopwatch()..start();
           
           // [DEBUG] Start Heartbeat Logger
@@ -480,10 +541,17 @@ class RobotService {
               debugPrint("⏳ [Ollama Wait] Still waiting... (${t.tick * 5}s elapsed)");
           });
 
-          debugPrint("🚀 [Ollama Start] Sending request to '${ollama.model}'...");
+                    final activeClient = imageBase64 != null ? ollamaVision : ollama;
+                    debugPrint("🚀 [Ollama Start] Sending request to '${activeClient.model}'...");
           String response;
           try {
-             response = await ollama.generate(prompt: prompt, numPredict: 256);
+                                                 response = await activeClient
+                                                         .generate(
+                                                             prompt: prompt,
+                                                             images: imageBase64 != null ? [imageBase64] : null,
+                                                             numPredict: 256,
+                                                         )
+                                                         .timeout(const Duration(seconds: 180));
           } finally {
              timer.cancel(); // Stop heartbeat
              stopwatch.stop();
@@ -498,42 +566,80 @@ class RobotService {
                if (startBrace != -1) clean = clean.substring(startBrace);
           }
            
-          final dynamic decoded = jsonDecode(clean);
+                    dynamic decoded;
+                    try {
+                        decoded = jsonDecode(clean);
+                    } catch (_) {
+                        if (questionsOnly) {
+                            final start = clean.indexOf('[');
+                            final end = clean.lastIndexOf(']');
+                            if (start != -1 && end != -1 && end > start) {
+                                try {
+                                    decoded = jsonDecode(clean.substring(start, end + 1));
+                                } catch (_) {
+                                    decoded = _extractQuestionsFromText(clean);
+                                }
+                            } else {
+                                decoded = _extractQuestionsFromText(clean);
+                            }
+                        } else {
+                            rethrow;
+                        }
+                    }
           final messages = <String>[];
           final learned = <String>{};
+
+                    if (questionsOnly) {
+                        final questions = decoded is List
+                                ? decoded.map((e) => e.toString()).toList()
+                                : <String>[];
+                        messages.addAll(_filterQuestions(questions, ocrTokens));
+                        return IdleAnalysisResult(messages: messages, learnedItems: learned);
+                    }
+
+                    Map<String, dynamic>? corrected;
+                    if (decoded is Map<String, dynamic>) {
+                        final needsCorrection = _idleAnalysisNeedsCorrection(decoded, ocrTokens);
+                        if (needsCorrection) {
+                            corrected = await _correctIdleAnalysis(decoded, ocrTokens);
+                        }
+                    }
+
+                    final dynamic effective = corrected ?? decoded;
           
-          if (decoded is Map<String, dynamic>) {
-              // 1. Process Insights (Auto-Learn)
-              if (decoded.containsKey('insights') && decoded['insights'] is List) {
-                  for (final item in decoded['insights']) {
-                      if (item is Map<String, dynamic>) {
-                          final goal = item['goal']?.toString() ?? 'Unknown Goal';
-                          final action = item['action'] as Map<String, dynamic>? ?? {};
-                          final fact = item['fact']?.toString() ?? '';
+                    if (effective is Map<String, dynamic>) {
+                            final filtered = _filterIdleAnalysis(effective, ocrTokens);
+                            // 1. Process Insights (Auto-Learn)
+                            if (filtered.containsKey('insights') && filtered['insights'] is List) {
+                                    for (final item in filtered['insights']) {
+                                            if (item is Map<String, dynamic>) {
+                                                    final goal = item['goal']?.toString() ?? 'Unknown Goal';
+                                                    final action = item['action'] as Map<String, dynamic>? ?? {};
+                                                    final fact = item['fact']?.toString() ?? '';
                           
-                          if (action.isNotEmpty && action.containsKey('target_text')) {
-                              // Execute Learning Side-Effect
-                              await learn(
-                                  state: state, 
-                                  goal: goal, 
-                                  action: action, 
-                                  factualDescription: fact
-                              );
-                              final target = action['target_text'].toString();
-                              learned.add(target);
-                              messages.add("💡 I autonomously learned that '$target' is used to '$goal'. Saved to memory.");
-                          }
-                      }
-                  }
-              }
+                                                    if (action.isNotEmpty && action.containsKey('target_text')) {
+                                                            // Execute Learning Side-Effect
+                                                            await learn(
+                                                                    state: state, 
+                                                                    goal: goal, 
+                                                                    action: action, 
+                                                                    factualDescription: fact
+                                                            );
+                                                            final target = action['target_text'].toString();
+                                                            learned.add(target);
+                                                            messages.add("💡 I autonomously learned that '$target' is used to '$goal'. Saved to memory.");
+                                                    }
+                                            }
+                                    }
+                            }
               
-              // 2. Process Questions
-              if (decoded.containsKey('questions') && decoded['questions'] is List) {
-                  for (final q in decoded['questions']) {
-                      messages.add(q.toString());
-                  }
-              }
-          }
+                            // 2. Process Questions
+                            if (filtered.containsKey('questions') && filtered['questions'] is List) {
+                                    for (final q in filtered['questions']) {
+                                            messages.add(q.toString());
+                                    }
+                            }
+                    }
           
           return IdleAnalysisResult(messages: messages, learnedItems: learned);
        } catch (e) {
@@ -541,6 +647,528 @@ class RobotService {
           return IdleAnalysisResult();
        }
   }
+
+    /// Vision-only idle analysis (no OCR grounding).
+    /// Uses a vision model to extract labeled elements, then checks memory for each.
+    /// Unknowns become questions; confident unknowns are saved to memory.
+    Future<IdleAnalysisResult> analyzeIdlePageVisionOnly({
+        required String imageBase64,
+        int minQuestions = 20,
+        double memoryThreshold = 0.88,
+        double visionConfidenceThreshold = 0.72,
+        int maxElements = 30,
+        int numPredict = 128,
+    }) async {
+        try {
+            final prompt = '''
+You are analyzing a CURRENT software UI screenshot.
+Return ONLY valid JSON. No markdown, no prose.
+
+Schema:
+{
+    "screen_summary": "short summary",
+    "elements": [
+        {
+            "label": "exact visible text",
+            "role": "button|tab|menu|link|input|icon|other",
+            "purpose": "what it likely does (leave empty if unsure)",
+            "confidence": 0.0-1.0
+        }
+    ]
+}
+
+Rules:
+- Only include elements with visible text labels.
+- Use the exact visible text for each label.
+- If you are unsure about an element's purpose, set purpose to "" and confidence < 0.5.
+- Try to list at least $minQuestions elements if visible.
+''';
+
+            final response = await ollamaVision.generate(
+                prompt: prompt,
+                images: [imageBase64],
+                numPredict: numPredict,
+                temperature: 0.1,
+            ).timeout(const Duration(seconds: 180));
+
+            final clean = _extractJson(response).trim();
+            dynamic decoded;
+            try {
+                decoded = jsonDecode(clean);
+            } catch (_) {
+                return IdleAnalysisResult();
+            }
+
+            String screenSummary = '';
+            List<dynamic> elements = [];
+            if (decoded is Map<String, dynamic>) {
+                screenSummary = decoded['screen_summary']?.toString() ?? '';
+                final raw = decoded['elements'] ?? decoded['items'];
+                if (raw is List) elements = raw;
+            } else if (decoded is List) {
+                elements = decoded;
+            }
+
+            final questions = <String>{};
+            final learned = <String>{};
+
+            var processed = 0;
+            final seenLabels = <String>{};
+            for (final element in elements) {
+                String label = '';
+                String role = '';
+                String purpose = '';
+                double confidence = 0.0;
+
+                if (element is String) {
+                    label = element.trim();
+                } else if (element is Map) {
+                    label = (element['label'] ?? element['text'] ?? element['name'] ?? '').toString().trim();
+                    role = (element['role'] ?? element['type'] ?? '').toString().trim();
+                    purpose = (element['purpose'] ?? element['description'] ?? '').toString().trim();
+                    final conf = element['confidence'];
+                    if (conf is num) {
+                        confidence = conf.toDouble();
+                    } else if (conf is String) {
+                        confidence = double.tryParse(conf) ?? 0.0;
+                    }
+                }
+
+                if (label.isEmpty || _isLikelyTimestampOrNoise(label)) continue;
+                if (seenLabels.contains(label.toLowerCase())) continue;
+                seenLabels.add(label.toLowerCase());
+                processed++;
+                if (processed > maxElements) break;
+
+                final query = purpose.isEmpty
+                        ? 'Element: $label.'
+                        : 'Element: $label. Purpose: $purpose.';
+
+                final queryEmbedding = await ollamaEmbed.embed(prompt: query);
+                final memories = await qdrant.search(
+                    queryEmbedding: queryEmbedding,
+                    limit: 1,
+                );
+
+                final score = memories.isNotEmpty ? (memories.first['score'] as double) : 0.0;
+                if (score >= memoryThreshold) continue;
+
+                if (purpose.isNotEmpty && confidence >= visionConfidenceThreshold) {
+                    final goal = _normalizeGoalFromPurpose(purpose, label);
+                    final saveEmbedding = await ollamaEmbed.embed(
+                        prompt: 'Goal: $goal. Element: $label. Purpose: $purpose. Screen: $screenSummary.',
+                    );
+
+                    await qdrant.saveMemory(
+                        embedding: saveEmbedding,
+                        payload: {
+                            'goal': goal,
+                            'action': {
+                                'type': 'click',
+                                'target_text': label,
+                            },
+                            'fact': purpose,
+                            'description': screenSummary,
+                            'role': role,
+                            'source': 'vision_mvp',
+                            'confidence': confidence,
+                            'timestamp': DateTime.now().toIso8601String(),
+                        },
+                    );
+                    learned.add(label);
+                } else {
+                    if (minQuestions <= 0 || questions.length < minQuestions) {
+                        questions.add('What does "$label" do?');
+                    }
+                }
+            }
+
+            return IdleAnalysisResult(
+                messages: questions.toList(growable: false),
+                learnedItems: learned,
+            );
+        } catch (e) {
+            debugPrint("[ROBOT] ❌ Vision-only Idle Analysis Failed: $e");
+            return IdleAnalysisResult();
+        }
+    }
+
+    /// Hybrid analysis using OCR labels + vision to assign role/purpose.
+    Future<IdleAnalysisResult> analyzeIdlePageHybrid({
+        required String imageBase64,
+        required List<String> labels,
+        int maxItems = 30,
+        int numPredict = 192,
+        double visionConfidenceThreshold = 0.6,
+    }) async {
+        try {
+            if (labels.isEmpty) return IdleAnalysisResult();
+
+            final cleaned = _cleanLabelList(labels);
+            if (cleaned.isEmpty) return IdleAnalysisResult();
+
+            final unique = <String>{};
+            final pruned = <String>[];
+            for (final l in cleaned) {
+                final v = l.trim();
+                if (v.isEmpty) continue;
+                final key = v.toLowerCase();
+                if (unique.add(key)) pruned.add(v);
+                if (pruned.length >= maxItems) break;
+            }
+
+            final labelList = pruned.map((l) => '"$l"').join(', ');
+            final prompt = '''
+You are analyzing a UI screenshot. For each label, assign role and purpose.
+Return ONLY valid JSON array (no object, no markdown), in this exact format:
+[
+    {"label": "...", "role": "button|tab|menu|link|input|folder|window|other", "purpose": "...", "confidence": 0.0-1.0}
+]
+
+Labels:
+[$labelList]
+''';
+
+            final response = await ollamaVision.generate(
+                prompt: prompt,
+                images: [imageBase64],
+                numPredict: numPredict,
+                temperature: 0.1,
+            ).timeout(const Duration(seconds: 180));
+
+            final clean = _extractJson(response);
+            dynamic decoded;
+            try {
+                decoded = jsonDecode(clean);
+            } catch (_) {
+                decoded = null;
+            }
+
+            final items = <Map<String, dynamic>>[];
+            if (decoded is List) {
+                for (final item in decoded) {
+                    if (item is Map<String, dynamic>) items.add(item);
+                }
+            }
+
+            if (items.isEmpty) {
+                final fallbackPrompt = '''
+You are given UI labels from a screenshot. For each label, infer a role and purpose based on common UI patterns.
+Return ONLY lines in this exact format:
+Label | role | purpose
+
+Allowed roles: button, tab, menu, link, input, folder, window, other
+
+Labels:
+[$labelList]
+''';
+
+                final fallbackResponse = await ollama
+                    .generate(prompt: fallbackPrompt, numPredict: numPredict)
+                    .timeout(const Duration(seconds: 180));
+
+                for (final line in fallbackResponse.split('\n')) {
+                    if (!line.contains('|')) continue;
+                    final parts = line.split('|').map((p) => p.trim()).toList();
+                    if (parts.length < 3) continue;
+                    items.add({
+                        'label': parts[0],
+                        'role': parts[1],
+                        'purpose': parts.sublist(2).join(' | ').trim(),
+                        'confidence': 0.7,
+                    });
+                }
+            }
+
+            if (items.isEmpty) {
+                return IdleAnalysisResult();
+            }
+
+            final learned = <String>{};
+            final questions = <String>[];
+
+            final tasks = <Future<void>>[];
+            for (final item in items) {
+                final label = (item['label'] ?? '').toString().trim();
+                final role = (item['role'] ?? 'other').toString().trim();
+                final purpose = (item['purpose'] ?? '').toString().trim();
+                final conf = item['confidence'];
+                final confVal = conf is num ? conf.toDouble() : double.tryParse(conf?.toString() ?? '') ?? 0.0;
+                if (label.isEmpty) continue;
+
+                if (purpose.isNotEmpty && confVal >= visionConfidenceThreshold) {
+                    tasks.add(learnVisionOnly(
+                        goal: purpose,
+                        action: {
+                            'type': 'click',
+                            'target_text': label,
+                            'role': role,
+                            'purpose': purpose,
+                        },
+                        fact: purpose,
+                        context: '',
+                    ).then((_) {
+                       // Add to learned items ONLY after successful save
+                       learned.add(label);
+                    }));
+                } else {
+                    questions.add('What does "$label" do?');
+                }
+            }
+            await Future.wait(tasks);
+
+            return IdleAnalysisResult(messages: questions, learnedItems: learned);
+        } catch (e) {
+            debugPrint("[ROBOT] ❌ Hybrid Idle Analysis Failed: $e");
+            return IdleAnalysisResult();
+        }
+    }
+
+    List<String> _cleanLabelList(List<String> labels) {
+        final cleaned = <String>[];
+        for (final label in labels) {
+            var l = label.trim().replaceAll(RegExp(r"^['`\x22]+|['`\x22]+$"), '');
+            if (l.isEmpty) continue;
+            if (l.length < 4) continue;
+            if (!RegExp(r'[A-Za-z]').hasMatch(l)) continue;
+            if (RegExp(r'^[0-9\.]+$').hasMatch(l)) continue;
+            if (l.contains('â') || l.contains('�')) continue;
+            final digits = RegExp(r'\d').allMatches(l).length;
+            final digitRatio = digits / l.length;
+            if (digitRatio > 0.4) continue;
+            final nonAlnum = RegExp(r'[^A-Za-z0-9\s]').allMatches(l).length;
+            if ((nonAlnum / l.length) > 0.4) continue;
+            if (RegExp(r'[~`^]').hasMatch(l)) continue;
+            cleaned.add(l);
+        }
+
+        final seen = <String>{};
+        final result = <String>[];
+        for (final l in cleaned) {
+            final key = l.toLowerCase();
+            if (seen.contains(key)) continue;
+            seen.add(key);
+            result.add(l);
+        }
+        return result;
+    }
+
+    List<String> _extractOcrTokens(UIState state) {
+        final tokens = <String>{};
+        for (final block in state.ocrBlocks) {
+            final lines = block.text.split(RegExp(r'[\r\n]+'));
+            for (final line in lines) {
+                final trimmed = line.trim();
+                if (trimmed.isEmpty) continue;
+                tokens.add(trimmed);
+                final parts = trimmed.split(RegExp(r'\s{2,}|\t|\|'));
+                for (final part in parts) {
+                    final p = part.trim();
+                    if (p.isNotEmpty) tokens.add(p);
+                }
+                final words = trimmed.split(RegExp(r'\s+'));
+                for (final word in words) {
+                    final w = word.trim();
+                    if (w.length >= 2 && w.length <= 32) tokens.add(w);
+                }
+            }
+        }
+        return tokens.toList();
+    }
+
+    String _normalizeToken(String value) {
+        return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    }
+
+    bool _isLikelyTimestampOrNoise(String value) {
+        final v = value.trim();
+        if (v.isEmpty) return true;
+        // Date-like: 17/01/2026 or 17-01-2026
+        if (RegExp(r'^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$').hasMatch(v)) return true;
+        // Time-like: 12:34 or 12:34:56
+        if (RegExp(r'^\d{1,2}:\d{2}(:\d{2})?$').hasMatch(v)) return true;
+        // Date+time fragments or mixed numeric noise
+        final normalized = _normalizeToken(v);
+        final hasAlpha = RegExp(r'[a-z]').hasMatch(normalized);
+        final hasDigit = RegExp(r'\d').hasMatch(normalized);
+        if (!hasAlpha && hasDigit) return true;
+        // Very short fragments like "a" or "..."
+        if (normalized.length <= 1) return true;
+        return false;
+    }
+
+    bool _tokenExists(String candidate, List<String> ocrTokens) {
+        if (candidate.trim().isEmpty) return false;
+        final normalized = _normalizeToken(candidate);
+        for (final token in ocrTokens) {
+            if (_normalizeToken(token) == normalized) return true;
+        }
+        return false;
+    }
+
+    String? _bestTokenMatch(String candidate, List<String> ocrTokens) {
+        if (candidate.trim().isEmpty || ocrTokens.isEmpty) return null;
+        final normalizedCandidate = _normalizeToken(candidate);
+        double bestScore = 0.0;
+        String? bestToken;
+        for (final token in ocrTokens) {
+            if (_isLikelyTimestampOrNoise(token)) continue;
+            final normalizedToken = _normalizeToken(token);
+            if (normalizedToken.isEmpty) continue;
+            final dist = _levenshtein(normalizedCandidate, normalizedToken);
+            final maxLen = normalizedCandidate.length > normalizedToken.length
+                    ? normalizedCandidate.length
+                    : normalizedToken.length;
+            final score = maxLen == 0 ? 0.0 : (1.0 - (dist / maxLen));
+            if (score > bestScore) {
+                bestScore = score;
+                bestToken = token;
+            }
+        }
+        if (bestScore >= 0.82) return bestToken;
+        return null;
+    }
+
+    int _levenshtein(String a, String b) {
+        final m = a.length;
+        final n = b.length;
+        if (m == 0) return n;
+        if (n == 0) return m;
+        final dp = List.generate(m + 1, (_) => List<int>.filled(n + 1, 0));
+        for (int i = 0; i <= m; i++) dp[i][0] = i;
+        for (int j = 0; j <= n; j++) dp[0][j] = j;
+        for (int i = 1; i <= m; i++) {
+            for (int j = 1; j <= n; j++) {
+                final cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                dp[i][j] = [
+                    dp[i - 1][j] + 1,
+                    dp[i][j - 1] + 1,
+                    dp[i - 1][j - 1] + cost,
+                ].reduce((v, e) => v < e ? v : e);
+            }
+        }
+        return dp[m][n];
+    }
+
+    bool _idleAnalysisNeedsCorrection(Map<String, dynamic> decoded, List<String> ocrTokens) {
+        if (ocrTokens.isEmpty) return false;
+        if (decoded.containsKey('insights') && decoded['insights'] is List) {
+            for (final item in decoded['insights']) {
+                if (item is Map<String, dynamic>) {
+                    final action = item['action'] as Map<String, dynamic>? ?? {};
+                    final target = action['target_text']?.toString() ?? '';
+                    if (!_tokenExists(target, ocrTokens)) return true;
+                }
+            }
+        }
+        if (decoded.containsKey('questions') && decoded['questions'] is List) {
+            for (final q in decoded['questions']) {
+                final question = q is Map<String, dynamic> ? q['question']?.toString() ?? '' : q.toString();
+                final target = _extractQuestionTarget(question);
+                if (target != null && !_tokenExists(target, ocrTokens)) return true;
+            }
+        }
+        return false;
+    }
+
+    Future<Map<String, dynamic>?> _correctIdleAnalysis(
+        Map<String, dynamic> decoded,
+        List<String> ocrTokens,
+    ) async {
+        if (ocrTokens.isEmpty) return null;
+        final prompt = '''
+You are correcting LLM output to match OCR tokens.
+OCR TOKENS (allowed): ${jsonEncode(ocrTokens)}
+
+Original JSON:
+${jsonEncode(decoded)}
+
+Rules:
+- Replace any action.target_text with the closest matching OCR token.
+- Replace any question to reference an OCR token exactly.
+- If you cannot map an item to OCR tokens, drop it.
+
+Return ONLY JSON in the same shape:
+{"insights": [...], "questions": [...]}
+''';
+
+        try {
+            final response = await ollama.generate(prompt: prompt, numPredict: 200);
+            final clean = _extractJson(response);
+            final dynamic result = jsonDecode(clean);
+            if (result is Map<String, dynamic>) return result;
+        } catch (e) {
+            debugPrint("Idle correction failed: $e");
+        }
+        return null;
+    }
+
+    Map<String, dynamic> _filterIdleAnalysis(Map<String, dynamic> decoded, List<String> ocrTokens) {
+        final filtered = <String, dynamic>{'insights': <dynamic>[], 'questions': <dynamic>[]};
+
+        if (decoded.containsKey('insights') && decoded['insights'] is List) {
+            final insights = <dynamic>[];
+            for (final item in decoded['insights']) {
+                if (item is Map<String, dynamic>) {
+                    final action = item['action'] as Map<String, dynamic>? ?? {};
+                    final target = action['target_text']?.toString() ?? '';
+                    if (_tokenExists(target, ocrTokens) && !_isLikelyTimestampOrNoise(target)) {
+                        insights.add(item);
+                    } else {
+                        final best = _bestTokenMatch(target, ocrTokens);
+                        if (best != null) {
+                            action['target_text'] = best;
+                            item['action'] = action;
+                            insights.add(item);
+                        }
+                    }
+                }
+            }
+            filtered['insights'] = insights;
+        }
+
+        if (decoded.containsKey('questions') && decoded['questions'] is List) {
+            final questions = <dynamic>[];
+            for (final q in decoded['questions']) {
+                final question = q is Map<String, dynamic> ? q['question']?.toString() ?? '' : q.toString();
+                final target = _extractQuestionTarget(question);
+                if (target != null && _tokenExists(target, ocrTokens) && !_isLikelyTimestampOrNoise(target)) {
+                    questions.add(question);
+                } else if (target != null) {
+                    final best = _bestTokenMatch(target, ocrTokens);
+                    if (best != null) {
+                        questions.add('What does $best do?');
+                    }
+                }
+            }
+            filtered['questions'] = questions;
+        }
+
+        return filtered;
+    }
+
+    String? _extractQuestionTarget(String question) {
+        if (question.trim().isEmpty) return null;
+        final quoted = RegExp(r'"([^"]+)"').firstMatch(question);
+        if (quoted != null) return quoted.group(1);
+        final cleaned = question
+            .replaceAll(RegExp(r'\?$'), '')
+            .replaceAll(RegExp(r"^(what does|what is|what's)\s+", caseSensitive: false), '')
+            .replaceAll(RegExp(r'\s+do\??$', caseSensitive: false), '')
+            .trim();
+        return cleaned.isEmpty ? null : cleaned;
+    }
+
+    String _normalizeGoalFromPurpose(String purpose, String label) {
+        final p = purpose.trim();
+        if (p.isEmpty) return 'Use $label';
+        final startsWithVerb = RegExp(
+          r'^(open|opens|create|creates|add|adds|start|starts|launch|launches|save|saves|delete|deletes|remove|removes|close|closes|exit|edit|view|show|hide|toggle|enable|disable|submit|search|find|upload|download)',
+          caseSensitive: false,
+        ).hasMatch(p);
+        if (startsWithVerb) return p[0].toUpperCase() + p.substring(1);
+        return 'Use $label';
+    }
 
   // --- DIAGNOSIS ---
   
@@ -565,6 +1193,22 @@ class RobotService {
           return "I could not diagnose the failure. Error: $e";
        }
   }
+
+    List<String> _filterQuestions(List<String> questions, List<String> ocrTokens) {
+        final filtered = <String>[];
+        for (final question in questions) {
+            final target = _extractQuestionTarget(question);
+            if (target != null && _tokenExists(target, ocrTokens) && !_isLikelyTimestampOrNoise(target)) {
+                filtered.add(question);
+            } else if (target != null) {
+                final best = _bestTokenMatch(target, ocrTokens);
+                if (best != null) {
+                    filtered.add('What does $best do?');
+                }
+            }
+        }
+        return filtered;
+    }
 
   // --- CLARIFICATION ANALYSIS ---
 
@@ -611,6 +1255,89 @@ class RobotService {
            return null;
        }
   }
+
+    /// Clarification parsing for vision-only flow (no OCR state required).
+    Future<Map<String, dynamic>?> analyzeUserClarificationVisionOnly({
+        required String userText,
+        required String? lastQuestion,
+    }) async {
+        final target = lastQuestion == null ? null : _extractQuestionTarget(lastQuestion);
+        if (target == null || target.trim().isEmpty) return null;
+
+        final prompt = '''
+I am a Robot Assistant. I asked the user: "$lastQuestion".
+The user replied: "$userText".
+
+Extract a lesson as JSON:
+{
+    "goal": "Short description of the goal (e.g. 'Open Settings')",
+    "action": {
+         "type": "click" or "type",
+         "target_text": "$target",
+         "text": "Text to type if type action" (optional)
+    },
+    "fact": "A factual summary of what this element does",
+    "context": "Any extra context or prerequisites (optional)"
+}
+
+If the user is not teaching an action, return only: {"analysis": "no_action"}
+''';
+
+        try {
+            final response = await ollama.generate(prompt: prompt, numPredict: 256);
+            debugPrint("[OLLAMA RAW - Clarify Vision]: $response");
+            final clean = _extractJson(response);
+            final dynamic json = jsonDecode(clean);
+            if (json is Map && json.containsKey('action')) {
+                return json as Map<String, dynamic>;
+            }
+            return null;
+        } catch (e) {
+            debugPrint("Clarification Analysis (Vision) Failed: $e");
+            return null;
+        }
+    }
+
+    /// Saves a vision-only learning entry to memory.
+    Future<void> learnVisionOnly({
+        required String goal,
+        required Map<String, dynamic> action,
+        required String fact,
+        String? context,
+    }) async {
+        final description = 'Goal: $goal. Fact: $fact. Context: ${context ?? ''}'.trim();
+        final embedding = await ollamaEmbed.embed(prompt: description);
+        await qdrant.saveMemory(
+            embedding: embedding,
+            payload: {
+                'goal': goal,
+                'action': action,
+                'fact': fact,
+                'description': description,
+                'source': 'vision_mvp',
+                'timestamp': DateTime.now().toIso8601String(),
+            },
+        );
+    }
+
+    List<String> _extractQuestionsFromText(String text) {
+        final results = <String>[];
+        final matches = RegExp(r'"([^"]+\?)"').allMatches(text);
+        for (final match in matches) {
+            final q = match.group(1);
+            if (q != null && q.contains('?')) {
+                results.add(q);
+            }
+        }
+        if (results.isNotEmpty) return results;
+
+        final fallbackMatches = RegExp(r'What[^\?]{2,200}\?', caseSensitive: false).allMatches(text);
+        for (final match in fallbackMatches) {
+            final q = match.group(0);
+            if (q != null) results.add(q.trim());
+        }
+        return results;
+    }
   
   // --- TRAINING SESSION METHODS ---
   // Now Event-Driven

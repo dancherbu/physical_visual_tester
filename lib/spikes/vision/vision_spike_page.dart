@@ -446,6 +446,66 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
     }
   }
 
+  Future<void> _hybridLearnScene() async {
+    if (_busy) return;
+    final teacher = _teacher;
+    final state = _lastUiState;
+    final imageBytes = _lastImageBytes;
+    if (teacher == null || state == null || imageBytes == null) {
+      setState(() => _error = 'Need a capture + OCR before hybrid learning.');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = 'Hybrid learning...';
+    });
+
+    try {
+      final base64Image = base64Encode(imageBytes);
+      final labels = _blocks
+          .expand((b) => b.text.split(RegExp(r'[\r\n]+')))
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+
+      final items = await teacher.analyzeLabelsWithVision(
+        base64Image: base64Image,
+        labels: labels,
+      );
+
+      int learned = 0;
+      for (final item in items) {
+        final label = (item['label'] ?? '').toString().trim();
+        final role = (item['role'] ?? 'other').toString().trim();
+        final purpose = (item['purpose'] ?? '').toString().trim();
+        if (label.isEmpty || purpose.isEmpty) continue;
+
+        await teacher.learnTask(
+          state: state,
+          goal: purpose,
+          action: {
+            'type': 'click',
+            'target_text': label,
+            'role': role,
+            'purpose': purpose,
+          },
+        );
+        learned += 1;
+      }
+
+      if (mounted) {
+        setState(() => _error = 'Hybrid learned $learned items.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Hybrid learning failed: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   // ... (Calibration methods)
 
   Future<void> _teachRecording(OcrBlock block, Point<double> clickCoords) async {
@@ -553,6 +613,7 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
 
     if (result.containsKey('test_action')) {
        // User chose to "Test" instead of immediately learn
+       if (!mounted) return;
        Navigator.pop(context); // Close dialog
        await _testAction(block, clickCoords);
        return;
@@ -1187,6 +1248,7 @@ class _VisionSpikePageState extends State<VisionSpikePage> {
         blocks: _blocks,
         uiState: _lastUiState,
         onCapture: _captureAndOcr,
+        onHybridLearn: _hybridLearnScene,
       ),
     );
   }
@@ -1199,6 +1261,7 @@ class _BottomPanel extends StatelessWidget {
     required this.blocks,
     required this.uiState,
     required this.onCapture,
+    required this.onHybridLearn,
   });
 
   final bool busy;
@@ -1206,6 +1269,7 @@ class _BottomPanel extends StatelessWidget {
   final List<OcrBlock> blocks;
   final UIState? uiState;
   final VoidCallback onCapture;
+  final VoidCallback onHybridLearn;
 
   @override
   Widget build(BuildContext context) {
@@ -1243,6 +1307,12 @@ class _BottomPanel extends StatelessWidget {
                         )
                       : const Icon(Icons.camera),
                   label: const Text('Capture + OCR'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: busy ? null : onHybridLearn,
+                  icon: const Icon(Icons.psychology_alt),
+                  label: const Text('Hybrid Learn'),
                 ),
               ],
             ),

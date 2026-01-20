@@ -210,6 +210,14 @@
                     "target_text": "File Explorer"
                 },
                 "fact": "Opens the file manager to browse documents and drives."
+            },
+            {
+                "goal": "Click Notepad",
+                "action": {
+                    "type": "click",
+                    "target_text": "Notepad"
+                },
+                "fact": "Brings Notepad to the foreground from the taskbar."
             }
         ]
     },

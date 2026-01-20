@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 
 import '../vision/ocr_models.dart';
@@ -18,6 +19,7 @@ import '../spikes/brain/qdrant_service.dart';
 import 'robot_service.dart';
 import 'training_model.dart';
 import 'offline_trainer.dart'; // [NEW]
+import 'brain_stats_page.dart'; // [NEW]
 
 // HID
 import '../hid/hid_contract.dart';
@@ -39,9 +41,15 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   final HidAdapter _hid = MethodChannelHidAdapter();
 
   // AI Config
+  // AI Config
   static const _hostIp = String.fromEnvironment('HOST_IP', defaultValue: '192.168.1.100');
-  final String _ollamaUrl = 'http://$_hostIp:11434';
-  final String _qdrantUrl = 'http://$_hostIp:6333';
+  
+  // Use localhost on Desktop, else use provided IP (Android/iOS)
+  bool get _isDesktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  String get _baseUrl => _isDesktop ? '127.0.0.1' : _hostIp;
+  
+  late final String _ollamaUrl = 'http://$_baseUrl:11434';
+  late final String _qdrantUrl = 'http://$_baseUrl:6333';
   final String _ollamaModel = 'nomic-embed-text';
 
   // State
@@ -64,7 +72,8 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   bool _useMock = true; // Default to Mock Mode
   List<String> _mockAssets = [];
   final Set<String> _studiedMocks = {}; // [NEW] Track studied screens
-  Set<String> _knownTexts = {}; // [NEW] Tracks elements known to Qdrant
+  Set<String> _learnedTexts = {}; // Brain 2: Actionable/Verified (Green)
+  Set<String> _recognizedTexts = {}; // Brain 1: Seen Before (Cyan)
   String? _currentMockAsset;
   int _imageWidth = 0;
   int _imageHeight = 0;
@@ -100,9 +109,13 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
 
   Future<void> _bootstrap() async {
       await _initRobot();
-      await _initMocks();
-      await _initCamera();
-      _startIdleLoop();
+      // Prevent screen sleep during testing/analysis
+    WakelockPlus.enable();
+    
+    // _checkPermissions(); // Undefined, assume handled by OS/Camera plugin
+    _initMocks();
+
+    _startIdleLoop();
       _startConnectionHealthCheck(); // [NEW]
       _log("✅ System Ready.");
   }
@@ -160,9 +173,11 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
     // [FIX] Using Llama 3.2 (Text Only) for robustness on Android
     final chatClient = OllamaClient(baseUrl: Uri.parse(_ollamaUrl), model: 'llama3.2:3b');
     final embedClient = OllamaClient(baseUrl: Uri.parse(_ollamaUrl), model: _ollamaModel); // nomic-embed-text
+    final visionClient = OllamaClient(baseUrl: Uri.parse(_ollamaUrl), model: 'moondream');
 
     _robot = RobotService(
       ollama: chatClient,
+      ollamaVisionClient: visionClient,
       ollamaEmbed: embedClient, // [NEW] Explicit embed client
       qdrant: QdrantService(baseUrl: Uri.parse(_qdrantUrl), collectionName: 'pvt_memory'),
     );
@@ -270,7 +285,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   void _startIdleLoop() {
       // Check every 5 seconds
       _idleTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-          if (_isRecording || _isRobotActive || _isThinking || _isChatOpen || _isTrainingMode) {
+          if (_isRecording || _isRobotActive || _isThinking || _isTrainingMode) {
               _lastInteractionTime = DateTime.now(); // Reset if busy
               return;
           }
@@ -319,7 +334,8 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                   _currentMockAsset = asset;
                   
                   // Reset Context on Auto-Switch
-                  _knownTexts.clear();
+                  _learnedTexts.clear();
+                  _recognizedTexts.clear();
                   _messages.clear(); 
                   _pendingCuriosityQuestions.clear();
                   _chatTargetBlock = null; 
@@ -355,9 +371,72 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
            _pendingCuriosityQuestions.clear(); 
       }
   }
+
+      List<String> _extractLabelsFromState(UIState state) {
+        final labels = <String>{};
+        for (final block in state.ocrBlocks) {
+          final lines = block.text.split(RegExp(r'[\r\n]+'));
+          for (final line in lines) {
+            final trimmed = line.trim();
+            if (trimmed.isEmpty) continue;
+            labels.add(trimmed);
+            final parts = trimmed.split(RegExp(r'\s{2,}|\t|\|'));
+            for (final part in parts) {
+              final p = part.trim();
+              if (p.isNotEmpty) labels.add(p);
+            }
+            final words = trimmed.split(RegExp(r'\s+'));
+            for (final word in words) {
+              final w = word.trim();
+              if (w.length >= 3 && w.length <= 32) labels.add(w);
+            }
+          }
+        }
+        return _cleanOcrLabels(labels.toList());
+      }
+
+      List<String> _cleanOcrLabels(List<String> labels) {
+        final cleaned = <String>[];
+        for (final label in labels) {
+          var l = label.trim().replaceAll(RegExp(r"^['`\x22]+|['`\x22]+$"), '');
+          if (l.isEmpty) continue;
+          if (l.length < 4) continue;
+          if (!RegExp(r'[A-Za-z]').hasMatch(l)) continue;
+          if (RegExp(r'^[0-9\.]+$').hasMatch(l)) continue;
+          if (l.contains('â') || l.contains('�')) continue;
+          final digits = RegExp(r'\d').allMatches(l).length;
+          final digitRatio = digits / l.length;
+          if (digitRatio > 0.4) continue;
+          final nonAlnum = RegExp(r'[^A-Za-z0-9\s]').allMatches(l).length;
+          if ((nonAlnum / l.length) > 0.4) continue;
+          if (RegExp(r'[~`^]').hasMatch(l)) continue;
+          cleaned.add(l);
+        }
+
+        final seen = <String>{};
+        final result = <String>[];
+        for (final l in cleaned) {
+          final key = l.toLowerCase();
+          if (seen.contains(key)) continue;
+          seen.add(key);
+          result.add(l);
+        }
+        return result;
+      }
   
   Future<void> _runIdleAnalysis() async {
       if (_currentUiState == null) return;
+      try {
+        final health = await _robot.checkHealth();
+        final ollamaOk = health['ollama'] ?? false;
+        if (!ollamaOk) {
+          _log("⚠️ Ollama unreachable. Skipping idle analysis.");
+          return;
+        }
+      } catch (_) {
+        _log("⚠️ Health check failed. Skipping idle analysis.");
+        return;
+      }
       
       // Capture context to detect race conditions
       final analyzingAsset = _currentMockAsset;
@@ -367,8 +446,46 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
       _log("💤 Idle Mode: Analyzing Screen in Background...");
       _log("🔍 Starting analysis of: $analyzingAssetName");
       
-      try {
-          final result = await _robot.analyzeIdlePage(_currentUiState!);
+        try {
+            final imageBase64 = _lastImageBytes == null ? null : base64Encode(_lastImageBytes!);
+          IdleAnalysisResult? result;
+          for (var attempt = 0; attempt < 3; attempt++) {
+            try {
+                    final labels = _extractLabelsFromState(_currentUiState!);
+                    
+                    // [Optimization] Fast-Eye Check: Do we already know these?
+                    if (_currentUiState != null) {
+                         final fastKnown = await _robot.fetchKnownInteractiveElements(_currentUiState!);
+                         if (fastKnown.isNotEmpty) {
+                             if (mounted) {
+                                 setState(() {
+                                     _recognizedTexts.addAll(fastKnown); // Brain 1: Cyan
+                                 });
+                             }
+                         }
+                    }
+                    
+                    if (imageBase64 != null && labels.isNotEmpty) {
+                        result = await _robot.analyzeIdlePageHybrid(
+                          imageBase64: imageBase64,
+                          labels: labels,
+                        );
+                    } else {
+                        result = await _robot.analyzeIdlePage(
+                          _currentUiState!,
+                          imageBase64: imageBase64,
+                        );
+                    }
+              break;
+            } catch (e) {
+              if (attempt == 2) rethrow;
+              final backoffSeconds = 2 * (attempt + 1);
+              _log("⚠️ Idle analysis failed (attempt ${attempt + 1}). Retrying in ${backoffSeconds}s...");
+              await Future.delayed(Duration(seconds: backoffSeconds));
+            }
+          }
+          if (result == null) return;
+          final safeResult = result;
           
           final currentAssetName = _currentMockAsset?.split('/').last ?? "Unknown";
           _log("✅ Finished analysis of: $analyzingAssetName (Current screen: $currentAssetName)");
@@ -385,17 +502,29 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                return;
           }
           
-          // A. Update Known Texts (Green Boxes)
-          if (result.learnedItems.isNotEmpty) {
+          // A. Update Mastery Texts (Green Boxes) - Brain 2 Confirmation
+              if (safeResult.learnedItems.isNotEmpty) {
               setState(() {
-                  _knownTexts.addAll(result.learnedItems);
+                  _learnedTexts.addAll(safeResult.learnedItems);
+                  _pendingCuriosityQuestions.removeWhere((q) => safeResult.learnedItems.any((l) => q.contains(l)));
+                  // Also promote to recognized if not already
+                  _recognizedTexts.addAll(safeResult.learnedItems);
               });
+              
+              if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                     content: Text("🧠 Learned ${safeResult.learnedItems.length} new items! Boxes should turn Green."),
+                     backgroundColor: Colors.green,
+                     duration: const Duration(seconds: 4),
+                  ));
+              }
           }
 
+
           // B. Handle Chat Messages
-          if (result.messages.isNotEmpty) {
-               _pendingCuriosityQuestions.addAll(result.messages);
-               _log("💡 Curiosity: Generated ${result.messages.length} messages.");
+          if (safeResult.messages.isNotEmpty) {
+            _pendingCuriosityQuestions.addAll(safeResult.messages);
+            _log("💡 Curiosity: Generated ${safeResult.messages.length} messages.");
                
                // Proactively ask if we found something
                if (!_isChatOpen && mounted && _pendingCuriosityQuestions.isNotEmpty) {
@@ -404,8 +533,8 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                        _messages.add(ChatMessage(sender: 'Robot', text: "While you were idle, I studied the screen."));
                        _messages.add(ChatMessage(
                            sender: 'Robot', 
-                           text: _pendingCuriosityQuestions.first,
-                           reasoning: "I analyzed the screen content. I learned ${result.learnedItems.length} new items and have ${result.messages.length} notes."
+                             text: _pendingCuriosityQuestions.first,
+                             reasoning: "I analyzed the screen content. I learned ${safeResult.learnedItems.length} new items and have ${safeResult.messages.length} notes."
                        ));
                        _pendingCuriosityQuestions.removeAt(0);
                    });
@@ -415,12 +544,12 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
           // C. Auto-Advance if we learned something and have no questions (Mastery)
           // [FIX] Do not advance if we just generated questions (even if we popped them for chat)
           final screenName = _currentMockAsset?.split('/').last ?? "Unknown Screen";
-          final greenCount = result.learnedItems.length;
-          final redCount = result.messages.length; // Approximate "unknowns" count based on questions generated
+          final greenCount = safeResult.learnedItems.length;
+          final redCount = safeResult.messages.length; // Approximate "unknowns" count based on questions generated
           
           _log("📊 Analysis of '$screenName': Green=$greenCount, Red=$redCount");
 
-          if (result.learnedItems.isNotEmpty && _pendingCuriosityQuestions.isEmpty && result.messages.isEmpty) {
+            if (safeResult.learnedItems.isNotEmpty && _pendingCuriosityQuestions.isEmpty && safeResult.messages.isEmpty) {
                _log("🚀 Mastery achieved on this screen. Auto-advancing in 4s...");
                Timer(const Duration(seconds: 4), () {
                    if (mounted && _currentMockAsset == analyzingAsset) _switchToNextUnstudiedMock();
@@ -700,7 +829,10 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
 
      // [NEW] Recall Memory
      _robot.fetchKnownInteractiveElements(state).then((known) {
-        if (mounted) setState(() => _knownTexts = known);
+        if (mounted) setState(() {
+             _learnedTexts = known;
+             _recognizedTexts.addAll(known);
+        });
      });
   }
 
@@ -1330,9 +1462,12 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                            reasoning: "I analyzed your reply and extracted a new skill. I have updated my Qdrant memory."
                        ));
                        // OPTIONAL: Update visuals?
-                       _robot.fetchKnownInteractiveElements(_currentUiState!).then((known) {
-                           if (mounted) setState(() => _knownTexts = known);
-                       });
+                        _robot.fetchKnownInteractiveElements(_currentUiState!).then((known) {
+                            if (mounted) setState(() {
+                                _learnedTexts = known;
+                                _recognizedTexts.addAll(known);
+                            });
+                        });
                    });
                    return;
                }
@@ -1449,7 +1584,8 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                            _useMock = true;
                            
                            // Reset Context
-                           _knownTexts.clear();
+                           _learnedTexts.clear();
+                           _recognizedTexts.clear(); // [NEW] Clear recognized too
                            _messages.clear(); 
                            _pendingCuriosityQuestions.clear();
                            _chatTargetBlock = null; 
@@ -1509,6 +1645,30 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
     final size = MediaQuery.of(context).size;
     final fit = _useMock ? BoxFit.contain : BoxFit.cover;
 
+    final showConnectionBanner = _connectionStatus != 'connected';
+    final connectionBanner = MaterialBanner(
+      content: Text(
+        _connectionStatus == 'init'
+            ? 'Connecting to Ollama/Qdrant...'
+            : _connectionStatus == 'partial'
+                ? 'Partial connectivity: Ollama or Qdrant is unreachable.'
+                : 'Disconnected: Ollama and Qdrant are unreachable.',
+      ),
+      leading: Icon(
+        _connectionStatus == 'partial' ? Icons.warning_amber : Icons.error_outline,
+        color: _connectionStatus == 'partial' ? Colors.orange : Colors.red,
+      ),
+      backgroundColor: _connectionStatus == 'partial'
+          ? Colors.orange.withValues(alpha: 0.1)
+          : Colors.red.withValues(alpha: 0.1),
+      actions: [
+        TextButton(
+          onPressed: _checkHealth,
+          child: const Text('Retry'),
+        ),
+      ],
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('🤖 Robot Tester', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -1520,6 +1680,36 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                  child: Icon(Icons.psychology, color: Colors.blueAccent),
                ),
            
+             // Idle Toggle
+             Switch(
+                 value: _isAnalyzingIdle || _idleTimer?.isActive == true,
+                 onChanged: (val) {
+                     if (val) {
+                         _startIdleLoop();
+                         _log("💤 Idle Mode Enabled");
+                     } else {
+                         _idleTimer?.cancel();
+                         _idleTimer = null;
+                         setState(() => _isAnalyzingIdle = false);
+                         _log("💤 Idle Mode Disabled");
+                     }
+                 },
+                 activeColor: Colors.blueAccent,
+             ),
+
+           // [NEW] Brain Stats
+             IconButton(
+                 icon: const Icon(Icons.psychology_alt, color: Colors.pinkAccent),
+                 tooltip: "Brain Statistics",
+                 onPressed: () {
+                     if (_isInit) {
+                         Navigator.push(context, MaterialPageRoute(builder: (_) => BrainStatsPage(robot: _robot)));
+                     } else {
+                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Robot not initialized yet.")));
+                     }
+                 },
+             ),
+
            // Mock Manager [NEW]
            IconButton(
              icon: const Icon(Icons.collections),
@@ -1560,6 +1750,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
           // 1. MAIN CONTENT
           Column(
             children: [
+              if (showConnectionBanner) connectionBanner,
               Expanded(
                 flex: 3,
                 child: Container(
@@ -1585,7 +1776,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
                                  blocks: _blocks, imageSize: Size(_imageWidth.toDouble(), _imageHeight.toDouble()),
                                  previewSize: size, rotation: InputImageRotation.rotation0deg, cameraLensDirection: CameraLensDirection.back,
                                  highlightedBlock: _chatTargetBlock,
-                                 learnedTexts: _knownTexts,
+                                 learnedTexts: _learnedTexts,
                              )),
                              
                           if (_isThinking) const Center(child: CircularProgressIndicator(color: Colors.red)),
