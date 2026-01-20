@@ -138,12 +138,12 @@ The Robot runs a continuous loop:
 
 **Context:** Unlike Selenium (which uses DOM/Accessibility APIs for exact element access), PVT works with pixels/OCR. This is more universal but introduces ambiguity and timing issues. The following features address these gaps.
 
-- [ ] **1. Sequence Memory (Task Chains):**
-    - [ ] Extend Qdrant memory schema to include `sequence_id` and `step_order` fields.
-    - [ ] When learning a multi-step task (e.g., "Login"), store each step with a link to the next.
-    - [ ] Implement `RobotService.executeSequence(sequenceId)` to replay a learned chain.
-    - [ ] Allow user to name and save sequences from recorded Training Sessions.
-    - [ ] UI: Show "Saved Sequences" in Brain Stats or Task Menu.
+- [x] **1. Sequence Memory (Task Chains):**
+    - [x] Extend Qdrant memory schema to include `sequence_id` and `step_order` fields.
+    - [x] When learning a multi-step task (e.g., "Login"), store each step with a link to the next.
+    - [x] Implement `RobotService.executeSequence(sequenceId)` to replay a learned chain.
+    - [x] Allow user to name and save sequences from recorded Training Sessions.
+    - [x] UI: Show "Saved Sequences" in Brain Stats or Task Menu.
 
 - [ ] **2. Action Verification:**
     - [ ] After executing any action (click, type), re-capture screen and compare to previous.

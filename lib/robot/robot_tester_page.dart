@@ -1048,9 +1048,14 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
       if (_reviewSession == null) return;
       
       if (_reviewIndex >= _reviewSession!.frames.length) {
-          _messages.add(ChatMessage(sender: 'Robot', text: "All steps reviewed! Shall I delete the raw recording data now to save space? (Yes/No)"));
-           // We are in 'cleanup' mode now
-           _reviewIndex = -1; // Flag for cleanup
+          _messages.add(ChatMessage(
+            sender: 'Robot', 
+            text: "All steps reviewed! 🎉\n\n"
+                  "Would you like to save this as a **replayable Sequence**? (Save/Skip)\n\n"
+                  "A Sequence can be executed again later to automate this task.",
+          ));
+           // We are in 'save sequence' mode now
+           _reviewIndex = -2; // Flag for save sequence prompt
            return;
       }
       
@@ -1081,6 +1086,32 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
   
   void _handleReviewResponse(String text) async {
        _resetIdleTimer();
+       
+       // Save as Sequence prompt
+       if (_reviewIndex == -2) {
+           if (text.toLowerCase().contains('save')) {
+               setState(() => _messages.add(ChatMessage(sender: 'Robot', text: 'Saving as Sequence...', isLoading: true)));
+               try {
+                   final seqId = await _robot.saveSessionAsSequence(_reviewSession!);
+                   setState(() {
+                       _messages.removeLast();
+                       _messages.add(ChatMessage(sender: 'Robot', text: "✅ Saved as Sequence: \"$seqId\"\n\nYou can replay it from View → Saved Sequences."));
+                   });
+               } catch (e) {
+                   setState(() {
+                       _messages.removeLast();
+                       _messages.add(ChatMessage(sender: 'Robot', text: "❌ Failed to save sequence: $e"));
+                   });
+               }
+           } else {
+               _messages.add(ChatMessage(sender: 'Robot', text: "Skipped saving sequence."));
+           }
+           // Now ask about cleanup
+           _messages.add(ChatMessage(sender: 'Robot', text: "Shall I delete the raw recording data now to save space? (Yes/No)"));
+           _reviewIndex = -1; // Move to cleanup state
+           return;
+       }
+       
        if (_reviewIndex == -1) {
            // Cleanup confirmation
            if (text.toLowerCase().contains('yes')) {

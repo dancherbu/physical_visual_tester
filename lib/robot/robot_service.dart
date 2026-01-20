@@ -1602,6 +1602,49 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
   }
 
   // ============================================================
+  // ACTION VERIFICATION - Phase 2.5
+  // ============================================================
+
+  /// Verifies that an action caused meaningful screen change.
+  /// 
+  /// Compares [beforeState] and [afterState] using Jaccard similarity.
+  /// Returns an [ActionVerificationResult] indicating success/warning.
+  ActionVerificationResult verifyAction({
+    required UIState? beforeState,
+    required UIState? afterState,
+    double similarityThreshold = 0.95,
+  }) {
+    if (beforeState == null || afterState == null) {
+        return ActionVerificationResult(
+            verified: true,
+            similarity: 0.0,
+            message: 'Verification skipped (no state data).',
+        );
+    }
+
+    final textBefore = beforeState.ocrBlocks.map((b) => b.text).toSet();
+    final textAfter = afterState.ocrBlocks.map((b) => b.text).toSet();
+
+    final intersection = textBefore.intersection(textAfter).length;
+    final union = textBefore.union(textAfter).length;
+    final similarity = union > 0 ? intersection / union : 1.0;
+
+    if (similarity > similarityThreshold && textBefore.isNotEmpty) {
+        return ActionVerificationResult(
+            verified: false,
+            similarity: similarity,
+            message: 'Screen unchanged (${(similarity * 100).toStringAsFixed(0)}% similar). Action may have missed.',
+        );
+    }
+
+    return ActionVerificationResult(
+        verified: true,
+        similarity: similarity,
+        message: 'Screen changed (${((1 - similarity) * 100).toStringAsFixed(0)}% different). Action verified.',
+    );
+  }
+
+  // ============================================================
   // SEQUENCE MEMORY (Task Chains) - Phase 2.5
   // ============================================================
 
@@ -1724,12 +1767,13 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
       );
 
       try {
-        // Get current screen state
-        final state = await captureState();
+        // Capture state BEFORE action for verification
+        final stateBefore = await captureState();
+        final textBefore = stateBefore?.ocrBlocks.map((b) => b.text).toSet() ?? {};
         
         // Ground the action (find coordinates)
-        if (step.targetText != null && state != null) {
-          final block = state.ocrBlocks.firstWhere(
+        if (step.targetText != null && stateBefore != null) {
+          final block = stateBefore.ocrBlocks.firstWhere(
             (b) => b.text.toLowerCase().contains(step.targetText!.toLowerCase()),
             orElse: () => throw StateError('Target "${step.targetText}" not found on screen.'),
           );
@@ -1742,13 +1786,33 @@ If the user is not teaching an action, return only: {"analysis": "no_action"}
 
         // Execute the action
         await executeAction(step.action);
-
-        yield SequenceExecutionEvent(
-          type: SequenceEventType.stepCompleted,
-          message: 'Completed: ${step.goal}',
-          currentStep: i,
-          totalSteps: steps.length,
-        );
+        
+        // ACTION VERIFICATION - Phase 2.5
+        await Future.delayed(const Duration(milliseconds: 800)); // Wait for UI to update
+        final stateAfter = await captureState();
+        final textAfter = stateAfter?.ocrBlocks.map((b) => b.text).toSet() ?? {};
+        
+        // Jaccard similarity check
+        final intersection = textBefore.intersection(textAfter).length;
+        final union = textBefore.union(textAfter).length;
+        final similarity = union > 0 ? intersection / union : 1.0;
+        
+        if (similarity > 0.95 && textBefore.isNotEmpty) {
+            // Screen barely changed - action may have failed
+            yield SequenceExecutionEvent(
+              type: SequenceEventType.stepCompleted,
+              message: '⚠️ Step ${i + 1} completed, but screen unchanged (${(similarity * 100).toStringAsFixed(0)}% similar). Action may have missed.',
+              currentStep: i,
+              totalSteps: steps.length,
+            );
+        } else {
+            yield SequenceExecutionEvent(
+              type: SequenceEventType.stepCompleted,
+              message: 'Completed: ${step.goal}',
+              currentStep: i,
+              totalSteps: steps.length,
+            );
+        }
 
         // Wait before next step
         if (i < steps.length - 1) {
@@ -1869,4 +1933,20 @@ class SequenceExecutionEvent {
 
   @override
   String toString() => '[$type] $message';
+}
+
+/// Result of action verification (Phase 2.5).
+class ActionVerificationResult {
+  final bool verified;
+  final double similarity;
+  final String message;
+
+  ActionVerificationResult({
+    required this.verified,
+    required this.similarity,
+    required this.message,
+  });
+
+  @override
+  String toString() => verified ? '✅ $message' : '⚠️ $message';
 }
