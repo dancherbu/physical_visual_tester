@@ -173,7 +173,7 @@ class _RobotTesterPageState extends State<RobotTesterPage> {
     // [FIX] Using Llama 3.2 (Text Only) for robustness on Android
     final chatClient = OllamaClient(baseUrl: Uri.parse(_ollamaUrl), model: 'llama3.2:3b');
     final embedClient = OllamaClient(baseUrl: Uri.parse(_ollamaUrl), model: _ollamaModel); // nomic-embed-text
-    final visionClient = OllamaClient(baseUrl: Uri.parse(_ollamaUrl), model: 'moondream');
+    final visionClient = OllamaClient(baseUrl: Uri.parse(_ollamaUrl), model: 'moondream');  // [REVERTED] granite was too slow
 
     _robot = RobotService(
       ollama: chatClient,

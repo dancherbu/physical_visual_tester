@@ -303,9 +303,17 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
     });
 
     try {
-      final ollama = OllamaClient(
+      // Chat client for text-only prompts
+      final chat = OllamaClient(
         baseUrl: Uri.parse(_ollamaController.text.trim()),
-        model: 'moondream',
+        model: 'llama3.2:3b',
+      );
+      // Vision client for image analysis
+      // NOTE: Granite 3.2 is slow on resource-constrained systems
+      // If too slow, switch back to 'moondream'
+      final vision = OllamaClient(
+        baseUrl: Uri.parse(_ollamaController.text.trim()),
+        model: 'moondream',  // [REVERTED] granite3.2-vision:2b was too slow
       );
       final embed = OllamaClient(
         baseUrl: Uri.parse(_ollamaController.text.trim()),
@@ -317,7 +325,12 @@ class _DesktopRobotPageState extends State<DesktopRobotPage> {
       );
 
       setState(() {
-        _robot = RobotService(ollama: ollama, ollamaEmbed: embed, qdrant: qdrant);
+        _robot = RobotService(
+          ollama: chat, 
+          ollamaVisionClient: vision,  // [NEW] Explicit vision client
+          ollamaEmbed: embed, 
+          qdrant: qdrant,
+        );
         _robot!.logs.listen((message) {
              if (mounted) _log(message);
         });

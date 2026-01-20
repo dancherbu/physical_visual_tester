@@ -880,26 +880,36 @@ Rules:
             debugPrint('[ROBOT] 🔬 Pruned labels (${pruned.length}): ${pruned.take(10).join(", ")}...');
 
             final labelList = pruned.map((l) => '"$l"').join(', ');
-            final prompt = '''
-You are analyzing a UI screenshot. For each label, assign role and purpose.
-Return ONLY valid JSON array (no object, no markdown), in this exact format:
-[
-    {"label": "...", "role": "button|tab|menu|link|input|folder|window|other", "purpose": "...", "confidence": 0.0-1.0}
-]
+            
+            // [FIX] Use TEXT-ONLY LLM instead of vision model
+            // Moondream doesn't understand JSON format, so we use llama3.2 text model
+            // which can infer UI element purposes from common patterns
+            final prompt = '''You are analyzing UI element labels from a screenshot.
+For each label, infer the role and purpose based on common UI patterns.
+Return ONLY a valid JSON array (no markdown, no explanation), like this:
+[{"label": "File", "role": "menu", "purpose": "Opens file operations", "confidence": 0.9}]
 
-Labels:
+Labels to analyze:
 [$labelList]
+
+Rules:
+- Only include labels that are likely interactive (buttons, menus, links)
+- Skip timestamps, numbers, and noise
+- Be concise in purpose descriptions
+- Set confidence 0.7-0.9 for common patterns, 0.5-0.7 for uncertain ones
 ''';
 
-            debugPrint('[ROBOT] 🔬 Sending to vision model: ${ollamaVision.model}');
-            final response = await ollamaVision.generate(
+            debugPrint('[ROBOT] 🔬 Using TEXT-ONLY LLM (${ollama.model}) instead of vision model');
+            debugPrint('[ROBOT] 🔬 Prompt length: ${prompt.length} chars');
+            
+            // Use text-only LLM instead of vision model
+            final response = await ollama.generate(
                 prompt: prompt,
-                images: [imageBase64],
                 numPredict: numPredict,
-                temperature: 0.1,
-            ).timeout(const Duration(seconds: 180));
+                temperature: 0.2,
+            ).timeout(const Duration(seconds: 60));
 
-            debugPrint('[ROBOT] 🔬 Vision model raw response (first 500 chars): ${response.substring(0, response.length > 500 ? 500 : response.length)}');
+            debugPrint('[ROBOT] 🔬 LLM response (first 500 chars): ${response.substring(0, response.length > 500 ? 500 : response.length)}');
             
             final clean = _extractJson(response);
             debugPrint('[ROBOT] 🔬 Extracted JSON (first 300 chars): ${clean.substring(0, clean.length > 300 ? 300 : clean.length)}');
