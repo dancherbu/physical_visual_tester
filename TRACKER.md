@@ -145,11 +145,11 @@ The Robot runs a continuous loop:
     - [x] Allow user to name and save sequences from recorded Training Sessions.
     - [x] UI: Show "Saved Sequences" in Brain Stats or Task Menu.
 
-- [ ] **2. Action Verification:**
-    - [ ] After executing any action (click, type), re-capture screen and compare to previous.
-    - [ ] Verify expected change occurred (e.g., dialog closed, new text appeared).
-    - [ ] If no change detected after timeout, retry action or ask user for help.
-    - [ ] Add `verifyAction(expectedChange)` helper to `RobotService`.
+- [x] **2. Action Verification:**
+    - [x] After executing any action (click, type), re-capture screen and compare to previous.
+    - [x] Verify expected change occurred (e.g., dialog closed, new text appeared).
+    - [x] If no change detected after timeout, retry action or ask user for help.
+    - [x] Add `verifyAction(expectedChange)` helper to `RobotService`.
 
 - [ ] **3. Smart Waits & Synchronization:**
     - [ ] Implement `waitForTextAppears(text, timeout)` – poll OCR until target text is visible.
